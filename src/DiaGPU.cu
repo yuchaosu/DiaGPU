@@ -261,92 +261,56 @@ void multiply_sparse_noPad(const DiagListF32& A,
     CUDA_CALL(cudaPeekAtLastError());
     CUDA_CALL(cudaDeviceSynchronize());
 
-    std::vector<int>  h_offsetsC(offsetsC.size());
-    std::vector<int>  h_ptrC(ptrC.size());
-    std::vector<float> h_outValsC(nnzC);
+    // Download temp C (pre-compaction)
+    std::vector<int>    h_offsetsC(offsetsC.size());
+    std::vector<int>    h_lenC(lenC.size());
+    std::vector<int>    h_ptrC(ptrC.size());
+    std::vector<float>  h_outValsC(nnzC);
+    std::vector<float>  h_absSumC(numDiagC);
+
     thrust::copy(d_offsetsC.begin(), d_offsetsC.end(), h_offsetsC.begin());
+    thrust::copy(d_lenC.begin(),     d_lenC.end(),     h_lenC.begin());
     thrust::copy(d_ptrC.begin(),     d_ptrC.end(),     h_ptrC.begin());
     thrust::copy(d_outValsC.begin(), d_outValsC.end(), h_outValsC.begin());
-    printf("After numeric multiplication, before compaction:\n");
-    // Quick inspect: for each cIdx, print length and first few values
-    for (int c=0; c<numDiagC; ++c) {
-        int L = h_ptrC[c+1]-h_ptrC[c];
-        printf("NUMERIC C offset=%d len=%d\n", h_offsetsC[c], L);
-        for (int t=0; t<L; ++t) {
-            printf(" %g", h_outValsC[h_ptrC[c]+t]);
-        }
-        printf("\n");
-    }
+    thrust::copy(d_absSumC.begin(),  d_absSumC.end(),  h_absSumC.begin());
 
-    // 5) Keep flags + scans (device)
-    // keep mask: drop diagonals whose |sum| <= eps
-    thrust::device_vector<int> d_keepC(numDiagC);
-    if (eps == 0.0f) {
-        thrust::transform(d_absSumC.begin(), d_absSumC.end(), d_keepC.begin(), IsNonZero{});
-    } else {
-        thrust::transform(d_absSumC.begin(), d_absSumC.end(), d_keepC.begin(), GreaterThanEps{eps});
-    }
-
-    // compact index: pos for each original c (exclusive scan of keep)
-    thrust::device_vector<int> d_compactIndexC(numDiagC);
-    thrust::exclusive_scan(d_keepC.begin(), d_keepC.end(), d_compactIndexC.begin(), 0);
-
-    // number of kept diagonals
-    int newNumDiagC = 0;
-    if (numDiagC > 0) {
-        int lastKeep = d_keepC[numDiagC - 1];
-        int lastIdx  = d_compactIndexC[numDiagC - 1];
-        newNumDiagC  = lastIdx + lastKeep;
-    }
-
-    // ---- build dense ptr in compact (kept) order ----
-    // 1) scatter lengths (lenC) into compact positions (pos)
-    thrust::device_vector<int> d_lenDense(newNumDiagC, 0);
-    thrust::scatter_if(
-        d_lenC.begin(), d_lenC.end(),        // values to scatter (length per original c)
-        d_compactIndexC.begin(),             // map: c -> pos
-        d_keepC.begin(),                     // stencil: only when keep==1
-        d_lenDense.begin());                 // dense (kept) destination
-
-    // 2) scan to get dense ptr for kept diagonals
-    thrust::device_vector<int> d_ptrCompactDense(newNumDiagC + 1);
-    d_ptrCompactDense[0] = 0;
-    thrust::exclusive_scan(d_lenDense.begin(), d_lenDense.end(),
-                        d_ptrCompactDense.begin() + 1, 0);
-
-    // total kept nnz
-    int newNNZ = d_ptrCompactDense[newNumDiagC];
-
-    thrust::device_vector<int>   d_offsetsCompact(newNumDiagC);
-    thrust::device_vector<float> d_valsCompact(newNNZ);
-
-    // 6) Compact kept segments
-    dim3 cblock(256, 1);
-    dim3 cgrid((maxLenC + cblock.x - 1)/cblock.x, numDiagC);
-    compact_segments_kernel<float><<<cgrid, cblock>>>(
-        numDiagC,
-        thrust::raw_pointer_cast(d_keepC.data()),
-        thrust::raw_pointer_cast(d_offsetsC.data()),
-        thrust::raw_pointer_cast(d_lenC.data()),
-        thrust::raw_pointer_cast(d_ptrC.data()),
-        thrust::raw_pointer_cast(d_outValsC.data()),
-        thrust::raw_pointer_cast(d_compactIndexC.data()),
-        thrust::raw_pointer_cast(d_ptrCompactDense.data()),
-        thrust::raw_pointer_cast(d_offsetsCompact.data()),
-        thrust::raw_pointer_cast(d_valsCompact.data()));
-    CUDA_CALL(cudaPeekAtLastError());
-    CUDA_CALL(cudaDeviceSynchronize());
-
-    // 7) Download compact result into C_out
+    // Host-side compaction: keep diagonals with |sum| > eps (or != 0 if eps==0)
     C_out.N = N;
-    C_out.offsets.resize(newNumDiagC);
-    C_out.ptr.resize(newNumDiagC + 1);
-    C_out.vals.resize(newNNZ);
-    
-    thrust::copy(d_offsetsCompact.begin(), d_offsetsCompact.end(), C_out.offsets.begin());
-    thrust::copy(d_ptrCompactDense.begin(), d_ptrCompactDense.begin() + (newNumDiagC + 1), C_out.ptr.begin());
-    thrust::copy(d_valsCompact.begin(), d_valsCompact.end(), C_out.vals.begin());
+    C_out.offsets.clear();
+    C_out.ptr.clear();
+    C_out.vals.clear();
 
+    C_out.ptr.push_back(0);  // ptr[0] = 0
+
+    for (int c = 0; c < numDiagC; ++c) {
+        float s = h_absSumC[c];
+        bool keep = (eps == 0.0f) ? (s != 0.0f) : (std::fabs(s) > eps);
+        if (!keep) continue;
+
+        // append this diagonal in order
+        C_out.offsets.push_back(h_offsetsC[c]);
+
+        int L  = h_lenC[c];                     // expected length = N - |offset|
+        int p0 = h_ptrC[c], p1 = h_ptrC[c+1];   // slice in the temp buffer
+        // safety guard: if anything is off, clamp by the slice
+        if (p1 - p0 < L) L = p1 - p0;
+
+        // copy values
+        C_out.vals.insert(C_out.vals.end(), h_outValsC.begin() + p0, h_outValsC.begin() + p0 + L);
+
+        // advance ptr
+        C_out.ptr.push_back(C_out.ptr.back() + L);
+    }
+
+    // (Optional but recommended) sanity: ptr/offset lengths must match
+    if ((int)C_out.ptr.size() != (int)C_out.offsets.size() + 1 ||
+        (int)C_out.vals.size() != C_out.ptr.back()) {
+        fprintf(stderr, "[compact-host] layout mismatch: ptr.size=%zu offs.size=%zu vals=%zu ptr.back()=%d\n",
+                C_out.ptr.size(), C_out.offsets.size(), C_out.vals.size(), C_out.ptr.back());
+        std::exit(1);
+    }
+    //print C_out
+    dump_list("C_out", C_out);
 
 }
 
