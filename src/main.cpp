@@ -1,160 +1,181 @@
 #include "DiaGPU.hpp"
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 #include <map>
 #include <set>
 #include <cstdio>
 #include <cmath>
-#include <algorithm>
 
-static inline int diag_len(int N, int o) { int a=(o>=0?o:-o); int L=N-a; return L>0?L:0; }
-static inline int s_of(int o){ return (o>=0?0:-o); }
-static inline int e_of(int N,int o){ return (o>=0?N-o:N); }
+using DiagMapF32 = std::unordered_map<int, std::vector<float>>;
 
-static void dump_map(const char* name, int N, const DiagMapF32& M) {
-    // print in sorted offset order for readability
-    std::map<int,const std::vector<float>*> sorted;
-    for (auto &kv : M) sorted[kv.first] = &kv.second;
-    printf("%s (N=%d): K=%zu\n", name, N, sorted.size());
-    for (auto &kv : sorted) {
-        printf("  %d: [", kv.first);
-        const auto &v = *kv.second;
-        for (size_t i=0;i<v.size();++i) printf("%g%s", v[i], (i+1<v.size()? ", ":""));
-        printf("]\n");
+static inline int start_row_h(int offset){ return (offset>=0?0:-offset); }
+static inline int end_row_h(int N,int offset){ return (offset>=0?N-offset:N); }
+
+
+// ---- map -> list (so you can author matrices easily) ----
+static DiagListF32 map_to_list(int N, const DiagMapF32& M) {
+    DiagListF32 L; L.N = N;
+    L.offsets.reserve(M.size());
+    for (auto &kv : M) L.offsets.push_back(kv.first);
+    std::sort(L.offsets.begin(), L.offsets.end());
+    L.ptr.assign(L.offsets.size() + 1, 0);
+    for (size_t d=0; d<L.offsets.size(); ++d) L.ptr[d+1] = L.ptr[d] + diag_len(N, L.offsets[d]);
+    L.vals.assign(L.ptr.back(), 0.0f);
+    for (size_t d=0; d<L.offsets.size(); ++d) {
+        int offset = L.offsets[d];
+        const auto &v = M.at(offset);
+        int need = diag_len(N, offset);
+        if ((int)v.size() != need) {
+            fprintf(stderr, "[map_to_list] length mismatch at offset=%d: need %d, got %zu\n", offset, need, v.size());
+            std::exit(1);
+        }
+        std::copy(v.begin(), v.end(), L.vals.begin() + L.ptr[d]);
     }
+    //print
+    dump_list("map_to_list", L);
+    return L;
 }
 
-// --- CPU map-based multiply & power for verification ---
-static void multiply_sparse_noPad_cpu(int N,
-                                      const DiagMapF32& A,
-                                      const DiagMapF32& B,
+// ---- CPU reference multiply (list) for verification ----
+static void multiply_sparse_noPad_cpu(const DiagListF32& A,
+                                      const DiagListF32& B,
                                       float eps,
-                                      DiagMapF32& C)
+                                      DiagListF32& C)
 {
-    C.clear();
-    // accumulate per q in a temporary std::map to keep order stable
-    std::map<int, std::vector<float>> acc;
+    const int N = A.N;
+    auto diag_len_h = [](int N, int offset){ int a=(offset>=0?offset:-offset); int L=N-a; return L>0?L:0; };
 
-    for (auto &a : A) {
-        int oA = a.first; const auto &vA = a.second;
-        for (auto &b : B) {
-            int oB = b.first; const auto &vB = b.second;
-            int q = oA + oB; int Lq = diag_len(N, q);
-            if (Lq <= 0) continue;
+    if (A.offsets.empty() || B.offsets.empty()) { C = {N, {}, {0}, {}}; return; }
 
-            int i_min = s_of(oA);
-            i_min = std::max(i_min, s_of(q));
-            i_min = std::max(i_min, s_of(oB) - oA);
+    // Build C offsets and contributing pairs (host)
+    std::vector<int> offsetsC, lenC, cPairPtr(1,0), cPairA, cPairB;
+    int bmin = B.offsets.front(), bmax = B.offsets.back();
+    std::vector<int> Bindex(bmax-bmin+1,-1);
+    for (int i=0;i<(int)B.offsets.size();++i) Bindex[B.offsets[i]-bmin]=i;
 
-            int i_max = e_of(N, oA);
-            i_max = std::min(i_max, e_of(N, q));
-            i_max = std::min(i_max, e_of(N, oB) - oA);
-
-            if (i_min >= i_max) continue;
-
-            auto &vq = acc[q];
-            if ((int)vq.size() != Lq) vq.assign(Lq, 0.0f);
-
-            for (int i = i_min; i < i_max; ++i) {
-                int t  = i - s_of(q);
-                int tA = i - s_of(oA);
-                int tB = (i + oA) - s_of(oB);
-                vq[t] += vA[tA] * vB[tB];
-            }
+    std::map<int, std::vector<std::pair<int,int>>> buckets; // key: offsetC
+    for (int dA=0; dA<(int)A.offsets.size(); ++dA) {
+        int offsetA=A.offsets[dA];
+        int clamp_min = std::max(offsetA + B.offsets.front(), -(N-1));
+        int clamp_max = std::min(offsetA + B.offsets.back(),   (N-1));
+        for (int offsetC=clamp_min; offsetC<=clamp_max; ++offsetC) {
+            int offsetB = offsetC - offsetA;
+            if (offsetB < bmin || offsetB > bmax) continue;
+            int dB = Bindex[offsetB-bmin]; if (dB<0) continue;
+            if (diag_len_h(N,offsetC)<=0) continue;
+            buckets[offsetC].emplace_back(dA,dB);
         }
     }
+    for (auto &kv:buckets){ offsetsC.push_back(kv.first); lenC.push_back(diag_len_h(N,kv.first)); }
+    for (auto &kv:buckets) for (auto &pr:kv.second){ cPairA.push_back(pr.first); cPairB.push_back(pr.second); cPairPtr.push_back((int)cPairA.size()); }
 
-    // prune all-zero diagonals
-    for (auto it = acc.begin(); it != acc.end(); ) {
-        float s = 0.0f; for (float x : it->second) s += std::fabs(x);
-        if ((eps==0.0f ? s==0.0f : s<=eps)) it = acc.erase(it);
-        else { ++it; }
+    // Numeric accumulate
+    std::vector<int> ptrC(offsetsC.size()+1,0);
+    for (size_t i=0;i<offsetsC.size();++i) ptrC[i+1]=ptrC[i]+lenC[i];
+    std::vector<float> valsC(ptrC.back(), 0.0f), absSumC(offsetsC.size(), 0.0f);
+
+    for (size_t cIdx=0; cIdx<offsetsC.size(); ++cIdx){
+        int offsetC = offsetsC[cIdx];
+        for (int p=cPairPtr[cIdx]; p<cPairPtr[cIdx+1]; ++p){
+            int dA=cPairA[p], dB=cPairB[p];
+            int offsetA=A.offsets[dA], offsetB=B.offsets[dB];
+
+            int i_min = start_row_h(offsetA);
+            i_min = std::max(i_min, start_row_h(offsetC));
+            i_min = std::max(i_min, start_row_h(offsetB)-offsetA);
+
+            int i_max = end_row_h(N,offsetA);
+            i_max = std::min(i_max, end_row_h(N,offsetC));
+            i_max = std::min(i_max, end_row_h(N,offsetB)-offsetA);
+            if (i_min >= i_max) continue;
+
+            for (int i=i_min;i<i_max;++i){
+                int t  = i - start_row_h(offsetC);
+                int tA = i - start_row_h(offsetA);
+                int tB = (i+offsetA) - start_row_h(offsetB);
+                float a = A.vals[A.ptr[dA]+tA];
+                float b = B.vals[B.ptr[dB]+tB];
+                valsC[ptrC[cIdx]+t] += a*b;
+            }
+        }
+        for (int t=0;t<lenC[cIdx];++t) absSumC[cIdx] += std::fabs(valsC[ptrC[cIdx]+t]);
     }
-    C.clear();
-    for (auto &kv : acc) C.emplace(kv.first, std::move(kv.second));
+
+    // Compact (drop zero diags)
+    std::vector<int> keepC(offsetsC.size(),0), compactIndexC(offsetsC.size(),0), keepLen(offsetsC.size(),0);
+    for (size_t c=0;c<offsetsC.size();++c) keepC[c] = (eps==0.0f) ? (absSumC[c]!=0.0f) : (std::fabs(absSumC[c])>eps);
+    int acc=0; for (size_t c=0;c<offsetsC.size();++c){ compactIndexC[c]=acc; acc+=keepC[c]; }
+    int newNumDiagC=acc;
+    for (size_t c=0;c<offsetsC.size();++c) keepLen[c] = keepC[c]? lenC[c]:0;
+    std::vector<int> ptrCompact(newNumDiagC+1,0);
+    for (size_t i=0;i<offsetsC.size();++i) ptrCompact[ std::min<int>(newNumDiagC,i+1) ] = ptrCompact[ std::min<int>(newNumDiagC,i) ] + keepLen[i];
+
+    C.N = N;
+    C.offsets.resize(newNumDiagC);
+    C.ptr = ptrCompact;
+    C.vals.resize(ptrCompact[newNumDiagC]);
+    for (size_t c=0;c<offsetsC.size();++c) if (keepC[c]) {
+        int pos = compactIndexC[c];
+        C.offsets[pos] = offsetsC[c];
+        std::copy_n(&valsC[ptrC[c]], lenC[c], &C.vals[C.ptr[pos]]);
+    }
 }
 
-static DiagMapF32 power_repeat_right_cpu(int N, const DiagMapF32& A, int power, float eps) {
-    if (power <= 1) return A;
-    DiagMapF32 C = A;
-    for (int k=2;k<=power;++k){ DiagMapF32 nxt; multiply_sparse_noPad_cpu(N, C, A, eps, nxt); C.swap(nxt); }
+static DiagListF32 power_repeat_right_cpu(const DiagListF32& A, int power, float eps){
+    if (power<=1) return A;
+    DiagListF32 C=A, next;
+    for (int k=2;k<=power;++k){ multiply_sparse_noPad_cpu(C, A, eps, next); C = std::move(next); }
     return C;
 }
 
-struct VerifyReport {
-    float max_abs_diff = 0.f;
-    float rel_fro_error = 0.f;
-    bool offsets_equal = true;
-    int missing_in_ref = 0;
-    int missing_in_gpu = 0;
-};
+static void compare_and_report(const DiagListF32& G, const DiagListF32& R, float tol){
+    std::map<int,int> idxG, idxR;
+    for (int i=0;i<(int)G.offsets.size();++i) idxG[G.offsets[i]]=i;
+    for (int i=0;i<(int)R.offsets.size();++i) idxR[R.offsets[i]]=i;
+    std::set<int> offs; for (auto&o:G.offsets) offs.insert(o); for (auto&o:R.offsets) offs.insert(o);
 
-static VerifyReport compare_maps(int N, const DiagMapF32& G, const DiagMapF32& R, float tol) {
-    VerifyReport rep;
-    std::set<int> offs;
-    for (auto &kv : G) offs.insert(kv.first);
-    for (auto &kv : R) offs.insert(kv.first);
-    rep.offsets_equal = (offs.size() == G.size() && offs.size() == R.size());
-
-    double diff_sq = 0.0, ref_sq = 0.0;
-    float  max_abs = 0.0f;
-
-    for (int q : offs) {
-        auto ig = G.find(q), ir = R.find(q);
-        if (ig != G.end() && ir != R.end()) {
-            const auto &vg = ig->second, &vr = ir->second;
-            int L = diag_len(N, q);
-            for (int t=0;t<L;++t){
-                float d = vg[t] - vr[t];
-                diff_sq += double(d)*d;
-                ref_sq  += double(vr[t])*vr[t];
-                max_abs = std::max(max_abs, std::fabs(d));
-            }
-        } else if (ig != G.end()) {
-            const auto &vg = ig->second;
-            double loc_sq = 0.0; float sabs = 0.0f;
-            for (float g : vg){ loc_sq += double(g)*g; sabs += std::fabs(g); max_abs = std::max(max_abs, std::fabs(g)); }
-            if (sabs > tol) { diff_sq += loc_sq; rep.missing_in_ref++; }
+    double diff_sq=0.0, ref_sq=0.0; float max_abs=0.f; int missG=0, missR=0;
+    for (int offset:offs){
+        auto ig=idxG.find(offset), ir=idxR.find(offset);
+        if (ig!=idxG.end() && ir!=idxR.end()){
+            int dG=ig->second, dR=ir->second, L=G.ptr[dG+1]-G.ptr[dG];
+            for (int t=0;t<L;++t){ float g=G.vals[G.ptr[dG]+t], r=R.vals[R.ptr[dR]+t], d=g-r;
+                diff_sq+=double(d)*d; ref_sq+=double(r)*r; max_abs=std::max(max_abs,std::fabs(d)); }
+        } else if (ig!=idxG.end()){
+            int dG=ig->second, L=G.ptr[dG+1]-G.ptr[dG]; float sabs=0; double loc=0;
+            for (int t=0;t<L;++t){ float g=G.vals[G.ptr[dG]+t]; sabs+=std::fabs(g); loc+=double(g)*g; max_abs=std::max(max_abs,std::fabs(g)); }
+            if (sabs>tol){ diff_sq+=loc; missR++; }
         } else {
-            const auto &vr = ir->second;
-            double loc_sq = 0.0; float sabs = 0.0f;
-            for (float r : vr){ loc_sq += double(r)*r; ref_sq += double(r)*r; sabs += std::fabs(r); max_abs = std::max(max_abs, std::fabs(r)); }
-            if (sabs > tol) { diff_sq += loc_sq; rep.missing_in_gpu++; }
+            int dR=ir->second, L=R.ptr[dR+1]-R.ptr[dR]; float sabs=0; double loc=0;
+            for (int t=0;t<L;++t){ float r=R.vals[R.ptr[dR]+t]; sabs+=std::fabs(r); loc+=double(r)*r; ref_sq+=double(r)*r; max_abs=std::max(max_abs,std::fabs(r)); }
+            if (sabs>tol){ diff_sq+=loc; missG++; }
         }
     }
-    rep.max_abs_diff = max_abs;
-    rep.rel_fro_error = (ref_sq>0.0) ? float(std::sqrt(diff_sq/ref_sq)) : float(std::sqrt(diff_sq));
-    return rep;
+    float rel = (ref_sq>0.0)? float(std::sqrt(diff_sq/ref_sq)) : float(std::sqrt(diff_sq));
+    printf("\n[VERIFY] max_abs_diff=%.6g, rel_fro=%.6g, missing_in_gpu=%d, missing_in_ref=%d\n",
+           max_abs, rel, missG, missR);
 }
 
-int main() {
+int main(){
     int N = 5, power = 3; float eps = 0.0f;
 
-    // Build A in the new map format
-    DiagMapF32 A = {
-        {  0, {1,2,3,4,5} },
-        { -1, {1,2,3,4}   }
+    // Author in map form
+    DiagMapF32 Amap = {
+        {  0, std::vector<float>{1,2,3,4,5} },
+        { -1, std::vector<float>{1,2,3,4}   }
     };
+    // Convert to list for the GPU API
+    DiagListF32 A = map_to_list(N, Amap);
 
-    dump_map("A", N, A);
-
-    // GPU power (map API)
-    DiagMapF32 A_gpu = power_repeat_right(N, A, power, eps);
-    dump_map("A^GPU", N, A_gpu);
+    // GPU power
+    DiagListF32 A_gpu = power_repeat_right(A, power, eps);
+    dump_list("A^GPU", A_gpu);
 
     // CPU reference
-    DiagMapF32 A_cpu = power_repeat_right_cpu(N, A, power, eps);
-    dump_map("A^CPU", N, A_cpu);
+    DiagListF32 A_cpu = power_repeat_right_cpu(A, power, eps);
+    dump_list("A^CPU", A_cpu);
 
-    // Verify
-    float tol = 1e-6f;
-    auto rep = compare_maps(N, A_gpu, A_cpu, tol);
-    printf("\n[VERIFY] offsets_equal=%s, missing_in_ref=%d, missing_in_gpu=%d\n",
-           rep.offsets_equal ? "true" : "false", rep.missing_in_ref, rep.missing_in_gpu);
-    printf("[VERIFY] max_abs_diff = %.6g, rel_fro_error = %.6g\n",
-           rep.max_abs_diff, rep.rel_fro_error);
-    bool ok = rep.offsets_equal && rep.missing_in_ref==0 && rep.missing_in_gpu==0 &&
-              (rep.max_abs_diff <= tol || rep.rel_fro_error <= tol);
-    printf("[VERIFY] %s\n", ok ? "✅ PASS" : "❌ FAIL");
-    return ok ? 0 : 1;
+    compare_and_report(A_gpu, A_cpu, 1e-6f);
+    return 0;
 }
