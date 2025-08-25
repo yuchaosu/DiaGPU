@@ -423,7 +423,7 @@ int main(int argc, char** argv){
     printf("  Ratio (cuSPARSE / Ours):    %.3fx\n", total_cus_ms / total_total_ms);
     // printf("  Ratio (MKL / Ours-total):   %.3fx\n", total_mkl_ms / total_total_ms);
 
-    std::ofstream fout("output/summary.txt", std::ios::app);
+    std::ofstream fout("summary.txt", std::ios::app);
     fout << "Summary over power=" << power << "\n";
     fout << "Matrix Size: " << N << "\n";
     fout << "Diagonal Size: " << (int)offs.size() << "\n";

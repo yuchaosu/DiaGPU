@@ -1,0 +1,280 @@
+Summary over power=5
+Matrix Size: 1024
+Diagonal Size: 1
+  Yours (kernel-only):        0.036 ms
+  Yours (kernel+copy):        0.0512 ms
+  cuSPARSE (compute+copy):    0.78368 ms
+  Ratio (cuSPARSE / Ours):    15.3062x
+===========================================================================
+Summary over power=5
+Matrix Size: 2048
+Diagonal Size: 1
+  Yours (kernel-only):        0.044064 ms
+  Yours (kernel+copy):        0.054176 ms
+  cuSPARSE (compute+copy):    0.7736 ms
+  Ratio (cuSPARSE / Ours):    14.2794x
+===========================================================================
+Summary over power=5
+Matrix Size: 4096
+Diagonal Size: 1
+  Yours (kernel-only):        0.054272 ms
+  Yours (kernel+copy):        0.065536 ms
+  cuSPARSE (compute+copy):    0.789792 ms
+  Ratio (cuSPARSE / Ours):    12.0513x
+===========================================================================
+Summary over power=5
+Matrix Size: 8192
+Diagonal Size: 1
+  Yours (kernel-only):        0.07856 ms
+  Yours (kernel+copy):        0.089824 ms
+  cuSPARSE (compute+copy):    0.77936 ms
+  Ratio (cuSPARSE / Ours):    8.67652x
+===========================================================================
+Summary over power=5
+Matrix Size: 16384
+Diagonal Size: 1
+  Yours (kernel-only):        0.124672 ms
+  Yours (kernel+copy):        0.136768 ms
+  cuSPARSE (compute+copy):    0.798656 ms
+  Ratio (cuSPARSE / Ours):    5.83949x
+===========================================================================
+Summary over power=3
+Matrix Size: 1024
+Diagonal Size: 6
+  Yours (kernel-only):        0.07168 ms
+  Yours (kernel+copy):        0.077824 ms
+  cuSPARSE (compute+copy):    0.556832 ms
+  Ratio (cuSPARSE / Ours):    7.15502x
+===========================================================================
+Summary over power=5
+Matrix Size: 1024
+Diagonal Size: 6
+  Yours (kernel-only):        0.159744 ms
+  Yours (kernel+copy):        0.171296 ms
+  cuSPARSE (compute+copy):    0.851648 ms
+  Ratio (cuSPARSE / Ours):    4.97179x
+===========================================================================
+Summary over power=3
+Matrix Size: 2048
+Diagonal Size: 6
+  Yours (kernel-only):        0.119104 ms
+  Yours (kernel+copy):        0.125248 ms
+  cuSPARSE (compute+copy):    0.57392 ms
+  Ratio (cuSPARSE / Ours):    4.58227x
+===========================================================================
+Summary over power=5
+Matrix Size: 2048
+Diagonal Size: 6
+  Yours (kernel-only):        0.2928 ms
+  Yours (kernel+copy):        0.305376 ms
+  cuSPARSE (compute+copy):    1.00173 ms
+  Ratio (cuSPARSE / Ours):    3.28031x
+===========================================================================
+Summary over power=3
+Matrix Size: 4096
+Diagonal Size: 6
+  Yours (kernel-only):        0.2152 ms
+  Yours (kernel+copy):        0.221696 ms
+  cuSPARSE (compute+copy):    0.57952 ms
+  Ratio (cuSPARSE / Ours):    2.61403x
+===========================================================================
+Summary over power=5
+Matrix Size: 4096
+Diagonal Size: 6
+  Yours (kernel-only):        0.610272 ms
+  Yours (kernel+copy):        0.624352 ms
+  cuSPARSE (compute+copy):    1.42966 ms
+  Ratio (cuSPARSE / Ours):    2.28984x
+===========================================================================
+Summary over power=5
+Matrix Size: 8192
+Diagonal Size: 6
+  Yours (kernel-only):        1.43635 ms
+  Yours (kernel+copy):        1.452 ms
+  cuSPARSE (compute+copy):    1.45155 ms
+  Ratio (cuSPARSE / Ours):    0.999691x
+===========================================================================
+Summary over power=3
+Matrix Size: 8192
+Diagonal Size: 6
+  Yours (kernel-only):        0.45952 ms
+  Yours (kernel+copy):        0.467712 ms
+  cuSPARSE (compute+copy):    0.783488 ms
+  Ratio (cuSPARSE / Ours):    1.67515x
+===========================================================================
+Summary over power=5
+Matrix Size: 16384
+Diagonal Size: 6
+  Yours (kernel-only):        3.2847 ms
+  Yours (kernel+copy):        3.30826 ms
+  cuSPARSE (compute+copy):    1.75091 ms
+  Ratio (cuSPARSE / Ours):    0.529255x
+===========================================================================
+Summary over power=3
+Matrix Size: 16384
+Diagonal Size: 6
+  Yours (kernel-only):        1.06598 ms
+  Yours (kernel+copy):        1.07827 ms
+  cuSPARSE (compute+copy):    0.942016 ms
+  Ratio (cuSPARSE / Ours):    0.873635x
+===========================================================================
+Summary over power=3
+Matrix Size: 1024
+Diagonal Size: 23
+  Yours (kernel-only):        0.119456 ms
+  Yours (kernel+copy):        0.1256 ms
+  cuSPARSE (compute+copy):    0.95808 ms
+  Ratio (cuSPARSE / Ours):    7.62802x
+===========================================================================
+Summary over power=5
+Matrix Size: 1024
+Diagonal Size: 23
+  Yours (kernel-only):        0.26704 ms
+  Yours (kernel+copy):        0.280096 ms
+  cuSPARSE (compute+copy):    1.66458 ms
+  Ratio (cuSPARSE / Ours):    5.94288x
+===========================================================================
+Summary over power=3
+Matrix Size: 2048
+Diagonal Size: 23
+  Yours (kernel-only):        0.219936 ms
+  Yours (kernel+copy):        0.22736 ms
+  cuSPARSE (compute+copy):    1.14563 ms
+  Ratio (cuSPARSE / Ours):    5.03885x
+===========================================================================
+Summary over power=5
+Matrix Size: 2048
+Diagonal Size: 23
+  Yours (kernel-only):        0.633728 ms
+  Yours (kernel+copy):        0.649088 ms
+  cuSPARSE (compute+copy):    2.5665 ms
+  Ratio (cuSPARSE / Ours):    3.954x
+===========================================================================
+Summary over power=3
+Matrix Size: 4096
+Diagonal Size: 23
+  Yours (kernel-only):        0.56096 ms
+  Yours (kernel+copy):        0.5712 ms
+  cuSPARSE (compute+copy):    1.75667 ms
+  Ratio (cuSPARSE / Ours):    3.07541x
+===========================================================================
+Summary over power=5
+Matrix Size: 4096
+Diagonal Size: 23
+  Yours (kernel-only):        1.69174 ms
+  Yours (kernel+copy):        1.71328 ms
+  cuSPARSE (compute+copy):    4.0096 ms
+  Ratio (cuSPARSE / Ours):    2.34031x
+===========================================================================
+Summary over power=3
+Matrix Size: 8192
+Diagonal Size: 23
+  Yours (kernel-only):        1.3783 ms
+  Yours (kernel+copy):        1.39059 ms
+  cuSPARSE (compute+copy):    2.484 ms
+  Ratio (cuSPARSE / Ours):    1.78629x
+===========================================================================
+Summary over power=5
+Matrix Size: 8192
+Diagonal Size: 23
+  Yours (kernel-only):        4.3241 ms
+  Yours (kernel+copy):        4.35286 ms
+  cuSPARSE (compute+copy):    6.81565 ms
+  Ratio (cuSPARSE / Ours):    1.56578x
+===========================================================================
+Summary over power=3
+Matrix Size: 16384
+Diagonal Size: 23
+  Yours (kernel-only):        3.31571 ms
+  Yours (kernel+copy):        3.3321 ms
+  cuSPARSE (compute+copy):    4.03661 ms
+  Ratio (cuSPARSE / Ours):    1.21143x
+===========================================================================
+Summary over power=5
+Matrix Size: 16384
+Diagonal Size: 23
+  Yours (kernel-only):        10.341 ms
+  Yours (kernel+copy):        10.3797 ms
+  cuSPARSE (compute+copy):    13.7196 ms
+  Ratio (cuSPARSE / Ours):    1.32178x
+===========================================================================
+Summary over power=3
+Matrix Size: 1024
+Diagonal Size: 33
+  Yours (kernel-only):        0.13088 ms
+  Yours (kernel+copy):        0.137024 ms
+  cuSPARSE (compute+copy):    1.0161 ms
+  Ratio (cuSPARSE / Ours):    7.41546x
+===========================================================================
+Summary over power=5
+Matrix Size: 1024
+Diagonal Size: 33
+  Yours (kernel-only):        0.322464 ms
+  Yours (kernel+copy):        0.33664 ms
+  cuSPARSE (compute+copy):    1.916 ms
+  Ratio (cuSPARSE / Ours):    5.69154x
+===========================================================================
+Summary over power=3
+Matrix Size: 2048
+Diagonal Size: 33
+  Yours (kernel-only):        0.272384 ms
+  Yours (kernel+copy):        0.2816 ms
+  cuSPARSE (compute+copy):    1.53862 ms
+  Ratio (cuSPARSE / Ours):    5.46386x
+===========================================================================
+Summary over power=5
+Matrix Size: 2048
+Diagonal Size: 33
+  Yours (kernel-only):        0.848896 ms
+  Yours (kernel+copy):        0.868352 ms
+  cuSPARSE (compute+copy):    3.25152 ms
+  Ratio (cuSPARSE / Ours):    3.74447x
+===========================================================================
+Summary over power=3
+Matrix Size: 4096
+Diagonal Size: 33
+  Yours (kernel-only):        0.707328 ms
+  Yours (kernel+copy):        0.718592 ms
+  cuSPARSE (compute+copy):    2.38653 ms
+  Ratio (cuSPARSE / Ours):    3.32112x
+===========================================================================
+Summary over power=5
+Matrix Size: 4096
+Diagonal Size: 33
+  Yours (kernel-only):        2.26819 ms
+  Yours (kernel+copy):        2.2935 ms
+  cuSPARSE (compute+copy):    6.89123 ms
+  Ratio (cuSPARSE / Ours):    3.00467x
+===========================================================================
+Summary over power=3
+Matrix Size: 8192
+Diagonal Size: 33
+  Yours (kernel-only):        1.81344 ms
+  Yours (kernel+copy):        1.82778 ms
+  cuSPARSE (compute+copy):    3.97456 ms
+  Ratio (cuSPARSE / Ours):    2.17453x
+===========================================================================
+Summary over power=5
+Matrix Size: 8192
+Diagonal Size: 33
+  Yours (kernel-only):        5.91728 ms
+  Yours (kernel+copy):        5.94998 ms
+  cuSPARSE (compute+copy):    12.4322 ms
+  Ratio (cuSPARSE / Ours):    2.08945x
+===========================================================================
+Summary over power=3
+Matrix Size: 16384
+Diagonal Size: 33
+  Yours (kernel-only):        4.48614 ms
+  Yours (kernel+copy):        4.5056 ms
+  cuSPARSE (compute+copy):    7.0753 ms
+  Ratio (cuSPARSE / Ours):    1.57033x
+===========================================================================
+Summary over power=5
+Matrix Size: 16384
+Diagonal Size: 33
+  Yours (kernel-only):        14.2041 ms
+  Yours (kernel+copy):        14.252 ms
+  cuSPARSE (compute+copy):    20.9774 ms
+  Ratio (cuSPARSE / Ours):    1.4719x
+===========================================================================
