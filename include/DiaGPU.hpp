@@ -30,10 +30,20 @@ static void dump_list(const char* name, const DiagListF32& M) {
 }
 
 // C = A * B (drop any all-zero output diagonal by eps; eps=0 → drop exactly-zero)
-void multiply_sparse_noPad(const DiagListF32& A,
-                           const DiagListF32& B,
-                           float eps,
-                           DiagListF32& C_out);
+// --- reuse plan for constant B (opaque handle) ---
+struct DiaBPlan;  // defined in .cu
+
+// Create/destroy a device plan that holds B on the GPU
+DiaBPlan* create_B_plan(const DiagListF32& B);
+void      destroy_B_plan(DiaBPlan* plan);
+
+// Multiply using a pre-uploaded B (kernel-only time and kernel+device-copy time)
+void multiply_sparse_noPad_with_timing_copy_plan(const DiagListF32& A,
+                                                 const DiaBPlan* planB,
+                                                 float eps,
+                                                 DiagListF32& C_out,
+                                                 float* kernel_ms,             // may be nullptr
+                                                 float* kernel_plus_copy_ms);  // may be nullptr
 
 // A^power using repeated right-multiply by the original A
 DiagListF32 power_repeat_right(const DiagListF32& A, int power, float eps = 0.0f);

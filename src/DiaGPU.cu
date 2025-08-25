@@ -35,6 +35,28 @@ int local_index_or_neg1(int N, int offset, int i) {
     return (i >= s && i < e) ? (i - s) : -1;
 }
 
+struct DiaBPlan {
+    int N = 0;
+    int numDiagB = 0;
+    thrust::device_vector<int>   offsetsB;
+    thrust::device_vector<int>   ptrB;
+    thrust::device_vector<float> valsB;
+};
+
+DiaBPlan* create_B_plan(const DiagListF32& B) {
+    auto* p = new DiaBPlan();
+    p->N = B.N;
+    p->numDiagB = (int)B.offsets.size();
+    p->offsetsB.assign(B.offsets.begin(), B.offsets.end());
+    p->ptrB.assign(B.ptr.begin(), B.ptr.end());
+    p->valsB.assign(B.vals.begin(), B.vals.end());
+    return p;
+}
+
+void destroy_B_plan(DiaBPlan* plan) {
+    delete plan;
+}
+
 // ---------- kernel: per-output-diagonal (C) numeric multiply ----------
 template <typename T>
 __global__ void spmspm_perc_kernel(
@@ -88,7 +110,7 @@ __global__ void spmspm_perc_kernel(
             T b = valsB[ptrB[dB] + tB];
             acc += a * b;
             //print offset A value A, offset B value B and partial sum C offset C
-            printf("A[%d] = %g, B[%d] = %g, C[%d] += %g, C[%d] = %g\n", offsetA, a, offsetB, b, offsetC, a * b, offsetC, acc);
+            //printf("A[%d] = %g, B[%d] = %g, C[%d] += %g, C[%d] = %g\n", offsetA, a, offsetB, b, offsetC, a * b, offsetC, acc);
         }
     }
 
@@ -98,30 +120,7 @@ __global__ void spmspm_perc_kernel(
     }
 }
 
-// ---------- kernel: compact kept C diagonals (drop all-zero ones) ----------
-template <typename T>
-__global__ void compact_segments_kernel(
-    int numDiagC,
-    const int* __restrict__ keepC,
-    const int* __restrict__ offsetsC,
-    const int* __restrict__ lenC,
-    const int* __restrict__ ptrC,
-    const T*   __restrict__ valsC,
-    const int* __restrict__ compactIndexC,   // new compact index for each kept diagonal
-    const int* __restrict__ ptrCompact,      // ptr array for compacted layout
-    int*       __restrict__ offsetsCompact,
-    T*         __restrict__ valsCompact)
-{
-    int c = blockIdx.y;
-    if (c >= numDiagC || !keepC[c]) return;
 
-    int t = blockIdx.x * blockDim.x + threadIdx.x;
-    int L = lenC[c]; if (t >= L) return;
-
-    int pos  = compactIndexC[c];
-    valsCompact[ptrCompact[pos] + t] = valsC[ptrC[c] + t];
-    if (t == 0) offsetsCompact[pos] = offsetsC[c];
-}
 
 // ---------- host: build output-diagonals (C) and contributing pairs ----------
 static void build_C_offsets_and_pairs(
@@ -185,70 +184,71 @@ struct GreaterThanEps { float eps; __host__ __device__ int operator()(float s) c
 struct MaskLen { __host__ __device__ int operator()(int k, int L) const { return k ? L : 0; } };
 
 // ---------- public API ----------
-void multiply_sparse_noPad(const DiagListF32& A,
-                           const DiagListF32& B,
-                           float eps,
-                           DiagListF32& C_out)
+void multiply_sparse_noPad_with_timing_copy_plan(const DiagListF32& A,
+                                                 const DiaBPlan* planB,
+                                                 float /*eps*/,
+                                                 DiagListF32& C_out,
+                                                 float* kernel_ms,
+                                                 float* kernel_plus_copy_ms)
 {
     const int N = A.N;
-
-    // 1) Build C’s diagonal set and contributing pairs (host)
+    // 1) Build output structure and contributing pairs (host)
     std::vector<int> offsetsC, lenC, cPairPtr, cPairA, cPairB;
-    build_C_offsets_and_pairs(N, A.offsets, B.offsets, offsetsC, lenC, cPairPtr, cPairA, cPairB);
-    //print cPairPtr, cPairA, cPairB
-    for (int i = 0; i < (int)cPairPtr.size(); ++i) {
-        printf("cPairPtr[%d] = %d\n", i, cPairPtr[i]);
-    }
-    for (int i = 0; i < (int)cPairA.size(); ++i) {
-        printf("cPairA[%d] = %d\n", i, cPairA[i]);
-    }
-    for (int i = 0; i < (int)cPairB.size(); ++i) {
-        printf("cPairB[%d] = %d\n", i, cPairB[i]);
+    build_C_offsets_and_pairs(N, A.offsets, 
+                              /*B.offsets*/ std::vector<int>(planB->offsetsB.begin(), planB->offsetsB.end()),
+                              offsetsC, lenC, cPairPtr, cPairA, cPairB);
+
+    const int numDiagC = (int)offsetsC.size();
+    if (numDiagC == 0) {
+        C_out = {N, {}, {0}, {}};
+        if (kernel_ms) *kernel_ms = 0.f;
+        if (kernel_plus_copy_ms) *kernel_plus_copy_ms = 0.f;
+        return;
     }
 
-    int numDiagC = (int)offsetsC.size();
-    if (numDiagC == 0) { C_out = {N, {}, {0}, {}}; return; }
-
-    // 2) Temporary (pre-compaction) ptr for C
+    // ptrC
     std::vector<int> ptrC(numDiagC + 1, 0);
-    for (int i = 0; i < numDiagC; ++i) ptrC[i+1] = ptrC[i] + lenC[i];
-    int nnzC = ptrC.back();
+    for (int i=0;i<numDiagC;++i) ptrC[i+1] = ptrC[i] + lenC[i];
+    const int nnzC = ptrC.back();
 
-    // 3) Upload inputs/meta
+    // 2) Upload A + C-meta + pairs (B is already on device via plan)
     thrust::device_vector<int>   d_offsetsA(A.offsets.begin(), A.offsets.end());
     thrust::device_vector<int>   d_ptrA(A.ptr.begin(),         A.ptr.end());
     thrust::device_vector<float> d_valsA(A.vals.begin(),       A.vals.end());
 
-    thrust::device_vector<int>   d_offsetsB(B.offsets.begin(), B.offsets.end());
-    thrust::device_vector<int>   d_ptrB(B.ptr.begin(),         B.ptr.end());
-    thrust::device_vector<float> d_valsB(B.vals.begin(),       B.vals.end());
+    thrust::device_vector<int>   d_offsetsC(offsetsC.begin(),  offsetsC.end());
+    thrust::device_vector<int>   d_lenC(lenC.begin(),          lenC.end());
+    thrust::device_vector<int>   d_ptrC(ptrC.begin(),          ptrC.end());
 
-    thrust::device_vector<int>   d_offsetsC(offsetsC.begin(), offsetsC.end());
-    thrust::device_vector<int>   d_lenC(lenC.begin(), lenC.end());
-    thrust::device_vector<int>   d_ptrC(ptrC.begin(), ptrC.end());
-
-    thrust::device_vector<int>   d_cPairPtr(cPairPtr.begin(), cPairPtr.end());
-    thrust::device_vector<int>   d_cPairA(cPairA.begin(),     cPairA.end());
-    thrust::device_vector<int>   d_cPairB(cPairB.begin(),     cPairB.end());
+    thrust::device_vector<int>   d_cPairPtr(cPairPtr.begin(),  cPairPtr.end());
+    thrust::device_vector<int>   d_cPairA(cPairA.begin(),      cPairA.end());
+    thrust::device_vector<int>   d_cPairB(cPairB.begin(),      cPairB.end());
 
     thrust::device_vector<float> d_outValsC(nnzC, 0.0f);
-    thrust::device_vector<float> d_absSumC(numDiagC, 0.0f);
+    thrust::device_vector<float> d_valsC_final(nnzC);
+    thrust::device_vector<float> d_absSumC(numDiagC, 0.0f); // kept if kernel signature needs it
 
-    // 4) Launch numeric
+    // 3) Launch + time (kernel-only and kernel+copy)
     int maxLenC = 0; for (int L : lenC) maxLenC = std::max(maxLenC, L);
-    dim3 block(256, 1);
-    dim3 grid((maxLenC + block.x - 1) / block.x, numDiagC);
+    const dim3 block(256,1);
+    const dim3 grid((maxLenC + block.x - 1)/block.x, numDiagC);
 
+    cudaEvent_t k0,k1,k2;
+    CUDA_CALL(cudaEventCreate(&k0));
+    CUDA_CALL(cudaEventCreate(&k1));
+    CUDA_CALL(cudaEventCreate(&k2));
+
+    CUDA_CALL(cudaEventRecord(k0, 0));
     spmspm_perc_kernel<float><<<grid, block>>>(
         N,
         (int)A.offsets.size(),
         thrust::raw_pointer_cast(d_offsetsA.data()),
         thrust::raw_pointer_cast(d_ptrA.data()),
         thrust::raw_pointer_cast(d_valsA.data()),
-        (int)B.offsets.size(),
-        thrust::raw_pointer_cast(d_offsetsB.data()),
-        thrust::raw_pointer_cast(d_ptrB.data()),
-        thrust::raw_pointer_cast(d_valsB.data()),
+        planB->numDiagB,
+        thrust::raw_pointer_cast(planB->offsetsB.data()),
+        thrust::raw_pointer_cast(planB->ptrB.data()),
+        thrust::raw_pointer_cast(planB->valsB.data()),
         numDiagC,
         thrust::raw_pointer_cast(d_offsetsC.data()),
         thrust::raw_pointer_cast(d_lenC.data()),
@@ -258,71 +258,58 @@ void multiply_sparse_noPad(const DiagListF32& A,
         thrust::raw_pointer_cast(d_cPairB.data()),
         thrust::raw_pointer_cast(d_outValsC.data()),
         thrust::raw_pointer_cast(d_absSumC.data()));
-    CUDA_CALL(cudaPeekAtLastError());
-    CUDA_CALL(cudaDeviceSynchronize());
+    CUDA_CALL(cudaEventRecord(k1, 0));
 
-    // Download temp C (pre-compaction)
-    std::vector<int>    h_offsetsC(offsetsC.size());
-    std::vector<int>    h_lenC(lenC.size());
-    std::vector<int>    h_ptrC(ptrC.size());
-    std::vector<float>  h_outValsC(nnzC);
-    std::vector<float>  h_absSumC(numDiagC);
+    // Device→device copy to simulate cuSPARSE "copy"
+    CUDA_CALL(cudaMemcpyAsync(
+        thrust::raw_pointer_cast(d_valsC_final.data()),
+        thrust::raw_pointer_cast(d_outValsC.data()),
+        nnzC * sizeof(float),
+        cudaMemcpyDeviceToDevice));
+    CUDA_CALL(cudaEventRecord(k2, 0));
+    CUDA_CALL(cudaEventSynchronize(k2));
 
+    float ms_kernel = 0.f, ms_total = 0.f;
+    CUDA_CALL(cudaEventElapsedTime(&ms_kernel, k0, k1));
+    CUDA_CALL(cudaEventElapsedTime(&ms_total,  k0, k2));
+    CUDA_CALL(cudaEventDestroy(k0));
+    CUDA_CALL(cudaEventDestroy(k1));
+    CUDA_CALL(cudaEventDestroy(k2));
+    if (kernel_ms)           *kernel_ms = ms_kernel;
+    if (kernel_plus_copy_ms) *kernel_plus_copy_ms = ms_total;
+
+    // 4) Download raw result (no compaction)
+    std::vector<int>   h_offsetsC(offsetsC.size());
+    std::vector<int>   h_ptrC(ptrC.size());
+    std::vector<float> h_valsC(nnzC);
     thrust::copy(d_offsetsC.begin(), d_offsetsC.end(), h_offsetsC.begin());
-    thrust::copy(d_lenC.begin(),     d_lenC.end(),     h_lenC.begin());
     thrust::copy(d_ptrC.begin(),     d_ptrC.end(),     h_ptrC.begin());
-    thrust::copy(d_outValsC.begin(), d_outValsC.end(), h_outValsC.begin());
-    thrust::copy(d_absSumC.begin(),  d_absSumC.end(),  h_absSumC.begin());
+    thrust::copy(d_valsC_final.begin(), d_valsC_final.end(), h_valsC.begin());
 
-    // Host-side compaction: keep diagonals with |sum| > eps (or != 0 if eps==0)
     C_out.N = N;
-    C_out.offsets.clear();
-    C_out.ptr.clear();
-    C_out.vals.clear();
-
-    C_out.ptr.push_back(0);  // ptr[0] = 0
-
-    for (int c = 0; c < numDiagC; ++c) {
-        float s = h_absSumC[c];
-        bool keep = (eps == 0.0f) ? (s != 0.0f) : (std::fabs(s) > eps);
-        if (!keep) continue;
-
-        // append this diagonal in order
-        C_out.offsets.push_back(h_offsetsC[c]);
-
-        int L  = h_lenC[c];                     // expected length = N - |offset|
-        int p0 = h_ptrC[c], p1 = h_ptrC[c+1];   // slice in the temp buffer
-        // safety guard: if anything is off, clamp by the slice
-        if (p1 - p0 < L) L = p1 - p0;
-
-        // copy values
-        C_out.vals.insert(C_out.vals.end(), h_outValsC.begin() + p0, h_outValsC.begin() + p0 + L);
-
-        // advance ptr
-        C_out.ptr.push_back(C_out.ptr.back() + L);
-    }
-
-    // (Optional but recommended) sanity: ptr/offset lengths must match
-    if ((int)C_out.ptr.size() != (int)C_out.offsets.size() + 1 ||
-        (int)C_out.vals.size() != C_out.ptr.back()) {
-        fprintf(stderr, "[compact-host] layout mismatch: ptr.size=%zu offs.size=%zu vals=%zu ptr.back()=%d\n",
-                C_out.ptr.size(), C_out.offsets.size(), C_out.vals.size(), C_out.ptr.back());
-        std::exit(1);
-    }
-    //print C_out
-    dump_list("C_out", C_out);
-
+    C_out.offsets = std::move(h_offsetsC);
+    C_out.ptr     = std::move(h_ptrC);
+    C_out.vals    = std::move(h_valsC);
 }
 
-DiagListF32 power_repeat_right(const DiagListF32& A, int power, float eps) {
-    if (power <= 1) return A;
-    DiagListF32 C = A;
-    for (int k = 2; k <= power; ++k) {
-        DiagListF32 next;
-        multiply_sparse_noPad(C, A, eps, next);   // C = C * A
-        C = std::move(next);
-        dump_list("power_repeat_right", C);
-        std::cout << std::endl;
-    }
-    return C;
-}
+
+
+// DiagListF32 power_repeat_right_timed(const DiagListF32& A, int power, float eps,
+//                                      float* total_kernel_ms, float* total_kernel_copy_ms) {
+//     if (total_kernel_ms) *total_kernel_ms = 0.f;
+//     if (total_kernel_copy_ms) *total_kernel_copy_ms = 0.f;
+//     if (power <= 1) return A;
+
+//     DiagListF32 C = A;
+//     for (int k = 2; k <= power; ++k) {
+//         DiagListF32 next;
+//         float ms_k = 0.f, ms_kc = 0.f;
+//         multiply_sparse_noPad_with_timing_copy(C, A, eps, next, &ms_k, &ms_kc);
+//         if (total_kernel_ms)        *total_kernel_ms        += ms_k;
+//         if (total_kernel_copy_ms)   *total_kernel_copy_ms   += ms_kc;
+//         C = std::move(next);
+//         // avoid dump_list here if you care about fair timing
+//     }
+//     return C;
+// }
+

@@ -174,6 +174,7 @@ int main(){
 
     // Author in map form
     DiagMapF32 Amap = {
+        {  1, std::vector<float>{1,2,3,4} },
         {  0, std::vector<float>{1,2,3,4,5} },
         { -1, std::vector<float>{1,2,3,4}   }
     };
