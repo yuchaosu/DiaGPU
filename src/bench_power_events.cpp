@@ -372,7 +372,7 @@ int main(int argc, char** argv){
     std::vector<int> offs = {-31, -29, -27, -25, -23, -21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31};
     DiagListF32 A = build_random_diaglist(N, offs, 123);
 
-    // -------- Your kernel path (reuse B; kernel-only & kernel+copy per multiply) --------
+    // -------- Ours kernel path (reuse B; kernel-only & kernel+copy per multiply) --------
     float total_kernel_ms = 0.0f, total_total_ms = 0.0f;
     float eps = 0.0f;
 
@@ -386,10 +386,10 @@ int main(int argc, char** argv){
         total_kernel_ms += ms_kernel;
         total_total_ms  += ms_total;
         Ck = std::move(next);
-        printf("[Yours] step %d  kernel=%.3f ms  kernel+copy=%.3f ms\n", k, ms_kernel, ms_total);
+        printf("[Ours] step %d  kernel=%.3f ms  kernel+copy=%.3f ms\n", k, ms_kernel, ms_total);
     }
 
-    printf("[Yours] totals: kernel=%.3f ms  kernel+copy=%.3f ms\n", total_kernel_ms, total_total_ms);
+    printf("[Ours] totals: kernel=%.3f ms  kernel+copy=%.3f ms\n", total_kernel_ms, total_total_ms);
     destroy_B_plan(planB);
 
     // -------- cuSPARSE path (compute+copy per multiply) --------
@@ -416,8 +416,8 @@ int main(int argc, char** argv){
     printf("\nSummary over power=%d\n", power);
     printf("Matrix Size: %d\n", N);
     printf("Diagonal Size: %d\n", (int)offs.size());
-    printf("  Yours (kernel-only):        %.3f ms\n", total_kernel_ms);
-    printf("  Yours (kernel+copy):        %.3f ms\n", total_total_ms);
+    printf("  Ours (kernel-only):        %.3f ms\n", total_kernel_ms);
+    printf("  Ours (kernel+copy):        %.3f ms\n", total_total_ms);
     printf("  cuSPARSE (compute+copy):    %.3f ms\n", total_cus_ms);
     // printf("  MKL (CPU compute only):     %.3f ms\n", total_mkl_ms);
     printf("  Ratio (cuSPARSE / Ours):    %.3fx\n", total_cus_ms / total_total_ms);
@@ -427,8 +427,8 @@ int main(int argc, char** argv){
     fout << "Summary over power=" << power << "\n";
     fout << "Matrix Size: " << N << "\n";
     fout << "Diagonal Size: " << (int)offs.size() << "\n";
-    fout << "  Yours (kernel-only):        " << total_kernel_ms << " ms\n";
-    fout << "  Yours (kernel+copy):        " << total_total_ms << " ms\n";
+    fout << "  Ours (kernel-only):        " << total_kernel_ms << " ms\n";
+    fout << "  Ours (kernel+copy):        " << total_total_ms << " ms\n";
     fout << "  cuSPARSE (compute+copy):    " << total_cus_ms << " ms\n";
     // fout << "  MKL (CPU compute only):     " << total_mkl_ms << " ms\n";
     fout << "  Ratio (cuSPARSE / Ours):    " << (total_cus_ms / total_total_ms) << "x\n";
