@@ -359,81 +359,205 @@ static void cusparse_power_right_events(int N,
 //     mkl_sparse_destroy(B);
 // }
 
+// int main(int argc, char** argv){
+//     int N=4096, power=5;
+//     if (argc>=2) N = std::atoi(argv[1]);
+//     if (argc>=3) power = std::atoi(argv[2]);
+//     printf("A^p benchmark with CUDA events: N=%d, power=%d\n", N, power);
+
+//     // Build test A (choose offsets you like)
+//     // std::vector<int> offs = { 0 };
+//     // std::vector<int> offs = { -8, -4, -1, 0, 3, 5 };
+//     // std::vector<int> offs = {-21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21};
+//     std::vector<int> offs = {-31, -29, -27, -25, -23, -21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31};
+//     DiagListF32 A = build_random_diaglist(N, offs, 123);
+
+//     // -------- Your kernel path (reuse B; kernel-only & kernel+copy per multiply) --------
+//     float total_kernel_ms = 0.0f, total_total_ms = 0.0f;
+//     float eps = 0.0f;
+
+//     DiaBPlan* planB = create_B_plan(A);   // upload B once and reuse
+//     DiagListF32 Ck = A;
+
+//     for (int k = 2; k <= power; ++k) {
+//         DiagListF32 next;
+//         float ms_kernel = 0.0f, ms_total = 0.0f; // kernel-only, kernel+device-copy
+//         multiply_sparse_noPad_with_timing_copy_plan(Ck, planB, eps, next, &ms_kernel, &ms_total);
+//         total_kernel_ms += ms_kernel;
+//         total_total_ms  += ms_total;
+//         Ck = std::move(next);
+//         printf("[Yours] step %d  kernel=%.3f ms  kernel+copy=%.3f ms\n", k, ms_kernel, ms_total);
+//     }
+
+//     printf("[Yours] totals: kernel=%.3f ms  kernel+copy=%.3f ms\n", total_kernel_ms, total_total_ms);
+//     destroy_B_plan(planB);
+
+//     // -------- cuSPARSE path (compute+copy per multiply) --------
+//     std::vector<int> rpA, ciA; std::vector<float> vaA;
+//     diaglist_to_csr(A, rpA, ciA, vaA);
+
+//     float total_cus_ms = 0.0f;
+//     DiagListF32 Cc;
+//     cusparse_power_right_events(N, rpA, ciA, vaA, power, &total_cus_ms, &Cc);
+//     printf("[cuSPARSE] total compute+copy: %.3f ms\n", total_cus_ms);
+
+//     // Verify final
+//     compare_diaglists(Ck, Cc, 1e-4f);
+
+//     // float total_mkl_ms = 0.0f;
+//     // DiagListF32 Cm;
+//     // mkl_power_right_events(N, rpA, ciA, vaA, power, &total_mkl_ms, &Cm);
+//     // printf("[MKL] total compute: %.3f ms\n", total_mkl_ms);
+
+//     // // Verify MKL vs Ours (and optionally vs cuSPARSE)
+//     // compare_diaglists(Ck, Cm, 1e-4f);
+
+//     // Updated summary
+//     printf("\nSummary over power=%d\n", power);
+//     printf("Matrix Size: %d\n", N);
+//     printf("Diagonal Size: %d\n", (int)offs.size());
+//     printf("  Yours (kernel-only):        %.3f ms\n", total_kernel_ms);
+//     printf("  Yours (kernel+copy):        %.3f ms\n", total_total_ms);
+//     printf("  cuSPARSE (compute+copy):    %.3f ms\n", total_cus_ms);
+//     // printf("  MKL (CPU compute only):     %.3f ms\n", total_mkl_ms);
+//     printf("  Ratio (cuSPARSE / Ours):    %.3fx\n", total_cus_ms / total_total_ms);
+//     // printf("  Ratio (MKL / Ours-total):   %.3fx\n", total_mkl_ms / total_total_ms);
+
+//     std::ofstream fout("summary.txt", std::ios::app);
+//     fout << "Summary over power=" << power << "\n";
+//     fout << "Matrix Size: " << N << "\n";
+//     fout << "Diagonal Size: " << (int)offs.size() << "\n";
+//     fout << "  Yours (kernel-only):        " << total_kernel_ms << " ms\n";
+//     fout << "  Yours (kernel+copy):        " << total_total_ms << " ms\n";
+//     fout << "  cuSPARSE (compute+copy):    " << total_cus_ms << " ms\n";
+//     // fout << "  MKL (CPU compute only):     " << total_mkl_ms << " ms\n";
+//     fout << "  Ratio (cuSPARSE / Ours):    " << (total_cus_ms / total_total_ms) << "x\n";
+//     // fout << "  Ratio (MKL / Ours-total):   " << (total_mkl_ms / total_total_ms) << "x\n";
+//     fout << "===========================================================================\n";
+//     fout.close();
+//     return 0;
+// }
+
 int main(int argc, char** argv){
-    int N=4096, power=5;
+    int N=4096, power=5, seg_size=2048;
     if (argc>=2) N = std::atoi(argv[1]);
     if (argc>=3) power = std::atoi(argv[2]);
-    printf("A^p benchmark with CUDA events: N=%d, power=%d\n", N, power);
+    if (argc>=4) seg_size = std::atoi(argv[3]);
+    printf("A^p benchmark with CUDA events: N=%d, power=%d, seg_size=%d\n", N, power, seg_size);
 
     // Build test A (choose offsets you like)
-    // std::vector<int> offs = { 0 };
-    // std::vector<int> offs = { -8, -4, -1, 0, 3, 5 };
+    std::vector<int> offs = { 0 };
+    // std::vector<int> offs = {-9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9};
     // std::vector<int> offs = {-21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21};
-    std::vector<int> offs = {-31, -29, -27, -25, -23, -21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31};
+    // std::vector<int> offs = {-31, -29, -27, -25, -23, -21, -19, -17, -15, -13, -11, -9, -7, -5, -3, -1, 0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31};
     DiagListF32 A = build_random_diaglist(N, offs, 123);
 
-    // -------- Ours kernel path (reuse B; kernel-only & kernel+copy per multiply) --------
-    float total_kernel_ms = 0.0f, total_total_ms = 0.0f;
-    float eps = 0.0f;
+    // Reuse B (right operand) across powers: B = A
+    DiaBPlan* planB = create_B_plan(A);
 
-    DiaBPlan* planB = create_B_plan(A);   // upload B once and reuse
-    DiagListF32 Ck = A;
+    auto run_variant = [&](const char* name,
+                           auto multiply_fn,
+                           DiagListF32& Cout,
+                           float& total_kernel_ms,
+                           float& total_total_ms)
+    {
+        total_kernel_ms = 0.0f;
+        total_total_ms  = 0.0f;
 
-    for (int k = 2; k <= power; ++k) {
-        DiagListF32 next;
-        float ms_kernel = 0.0f, ms_total = 0.0f; // kernel-only, kernel+device-copy
-        multiply_sparse_noPad_with_timing_copy_plan(Ck, planB, eps, next, &ms_kernel, &ms_total);
-        total_kernel_ms += ms_kernel;
-        total_total_ms  += ms_total;
-        Ck = std::move(next);
-        printf("[Ours] step %d  kernel=%.3f ms  kernel+copy=%.3f ms\n", k, ms_kernel, ms_total);
-    }
+        DiagListF32 Ck = A;            // start from A^1
+        for (int k = 2; k <= power; ++k) {
+            DiagListF32 next;
+            float ms_kernel = 0.0f, ms_total = 0.0f;
+            multiply_fn(Ck, planB, next, &ms_kernel, &ms_total);
+            total_kernel_ms += ms_kernel;
+            total_total_ms  += ms_total;
+            Ck = std::move(next);
+            printf("[%s] step %d  kernel=%.3f ms  kernel+copy=%.3f ms\n",
+                   name, k, ms_kernel, ms_total);
+        }
+        Cout = std::move(Ck);
+        printf("[%s] totals: kernel=%.3f ms  kernel+copy=%.3f ms\n",
+               name, total_kernel_ms, total_total_ms);
+    };
 
-    printf("[Ours] totals: kernel=%.3f ms  kernel+copy=%.3f ms\n", total_kernel_ms, total_total_ms);
-    destroy_B_plan(planB);
+    // ---------------- Variant 1: Non-blocking (baseline) ----------------
+    DiagListF32 C_nb;
+    float nb_k_ms=0.0f, nb_tc_ms=0.0f;
+    run_variant("NonBlocking",
+        /*multiply_fn=*/[&](const DiagListF32& Ck, const DiaBPlan* pB,
+                            DiagListF32& next, float* k_ms, float* kc_ms)
+        {
+            multiply_sparse_noPad_with_timing_copy_plan(Ck, pB, /*eps=*/0.0f,
+                                                        next, k_ms, kc_ms);
+        },
+        C_nb, nb_k_ms, nb_tc_ms);
 
-    // -------- cuSPARSE path (compute+copy per multiply) --------
+    // ---------------- Variant 2: Grouped C-centric ----------------
+    DiagListF32 C_gc;
+    float gc_k_ms=0.0f, gc_tc_ms=0.0f;
+    run_variant("GroupedCcentric",
+        /*multiply_fn=*/[&](const DiagListF32& Ck, const DiaBPlan* pB,
+                            DiagListF32& next, float* k_ms, float* kc_ms)
+        {
+            multiply_sparse_grouped_with_timing_copy_plan(Ck, pB,
+                                                          seg_size, /*eps=*/0.0f,
+                                                          next, k_ms, kc_ms);
+        },
+        C_gc, gc_k_ms, gc_tc_ms);
+
+    // ---------------- Variant 3: Grouped A-centric (reuse) ----------------
+    DiagListF32 C_ga;
+    float ga_k_ms=0.0f, ga_tc_ms=0.0f;
+    run_variant("GroupedAcentricReuse",
+        /*multiply_fn=*/[&](const DiagListF32& Ck, const DiaBPlan* pB,
+                            DiagListF32& next, float* k_ms, float* kc_ms)
+        {
+            multiply_sparse_grouped_Areuse_with_timing_copy_plan(Ck, pB,
+                                                                 seg_size,
+                                                                 next, k_ms, kc_ms);
+        },
+        C_ga, ga_k_ms, ga_tc_ms);
+
+    // ---------------- cuSPARSE reference ----------------
     std::vector<int> rpA, ciA; std::vector<float> vaA;
     diaglist_to_csr(A, rpA, ciA, vaA);
+    float cus_total_ms = 0.0f;
+    DiagListF32 C_cus;
+    cusparse_power_right_events(N, rpA, ciA, vaA, power, &cus_total_ms, &C_cus);
+    printf("[cuSPARSE] total compute+copy: %.3f ms\n", cus_total_ms);
 
-    float total_cus_ms = 0.0f;
-    DiagListF32 Cc;
-    cusparse_power_right_events(N, rpA, ciA, vaA, power, &total_cus_ms, &Cc);
-    printf("[cuSPARSE] total compute+copy: %.3f ms\n", total_cus_ms);
+    // ---------------- Correctness cross-checks ----------------
+    compare_diaglists(C_nb,  C_cus, 1e-4f);
+    compare_diaglists(C_gc,  C_cus, 1e-4f);
+    compare_diaglists(C_ga,  C_cus, 1e-4f);
 
-    // Verify final
-    compare_diaglists(Ck, Cc, 1e-4f);
+    // ---------------- Summary table ----------------
+    printf("\nSummary over power=%d  (N=%d, |diags|=%zu, seg_size=%d)\n",
+           power, N, offs.size(), seg_size);
+    // printf("  NonBlocking  : kernel=%.3f ms, kernel+copy=%.3f ms\n", nb_k_ms, nb_tc_ms);
+    // printf("  GroupedC     : kernel=%.3f ms, kernel+copy=%.3f ms\n", gc_k_ms, gc_tc_ms);
+    // printf("  GroupedAReuse: kernel=%.3f ms, kernel+copy=%.3f ms\n", ga_k_ms, ga_tc_ms);
+    // printf("  cuSPARSE     : compute+copy=%.3f ms\n", cus_total_ms);
+    printf("  Speedup v cuSPARSE (↑ better):\n");
+    printf("    NonBlocking   : %.3fx\n", cus_total_ms / nb_tc_ms);
+    printf("    GroupedC      : %.3fx\n", cus_total_ms / gc_tc_ms);
+    printf("    GroupedAReuse : %.3fx\n", cus_total_ms / ga_tc_ms);
 
-    // float total_mkl_ms = 0.0f;
-    // DiagListF32 Cm;
-    // mkl_power_right_events(N, rpA, ciA, vaA, power, &total_mkl_ms, &Cm);
-    // printf("[MKL] total compute: %.3f ms\n", total_mkl_ms);
-
-    // // Verify MKL vs Ours (and optionally vs cuSPARSE)
-    // compare_diaglists(Ck, Cm, 1e-4f);
-
-    // Updated summary
-    printf("\nSummary over power=%d\n", power);
-    printf("Matrix Size: %d\n", N);
-    printf("Diagonal Size: %d\n", (int)offs.size());
-    printf("  Ours (kernel-only):        %.3f ms\n", total_kernel_ms);
-    printf("  Ours (kernel+copy):        %.3f ms\n", total_total_ms);
-    printf("  cuSPARSE (compute+copy):    %.3f ms\n", total_cus_ms);
-    // printf("  MKL (CPU compute only):     %.3f ms\n", total_mkl_ms);
-    printf("  Ratio (cuSPARSE / Ours):    %.3fx\n", total_cus_ms / total_total_ms);
-    // printf("  Ratio (MKL / Ours-total):   %.3fx\n", total_mkl_ms / total_total_ms);
-
-    std::ofstream fout("summary.txt", std::ios::app);
-    fout << "Summary over power=" << power << "\n";
-    fout << "Matrix Size: " << N << "\n";
+    //Append to file
+    std::ofstream fout("summary_blocked.txt", std::ios::app);
+    fout << "Summary over power=" << power << " (N=" << N << ", seg=" << seg_size << ")\n";
     fout << "Diagonal Size: " << (int)offs.size() << "\n";
-    fout << "  Ours (kernel-only):        " << total_kernel_ms << " ms\n";
-    fout << "  Ours (kernel+copy):        " << total_total_ms << " ms\n";
-    fout << "  cuSPARSE (compute+copy):    " << total_cus_ms << " ms\n";
-    // fout << "  MKL (CPU compute only):     " << total_mkl_ms << " ms\n";
-    fout << "  Ratio (cuSPARSE / Ours):    " << (total_cus_ms / total_total_ms) << "x\n";
-    // fout << "  Ratio (MKL / Ours-total):   " << (total_mkl_ms / total_total_ms) << "x\n";
-    fout << "===========================================================================\n";
+    // fout << "  NonBlocking  kernel=" << nb_k_ms << "  kernel+copy=" << nb_tc_ms << " ms\n";
+    // fout << "  GroupedC     kernel=" << gc_k_ms << "  kernel+copy=" << gc_tc_ms << " ms\n";
+    // fout << "  GroupedAReuse kernel=" << ga_k_ms << "  kernel+copy=" << ga_tc_ms << " ms\n";
+    // fout << "  cuSPARSE compute+copy: " << cus_total_ms << " ms\n";
+    fout << "  Speedups (cuSPARSE/ours-total): "
+         << (cus_total_ms/nb_tc_ms) << ", "
+         << (cus_total_ms/gc_tc_ms) << ", "
+         << (cus_total_ms/ga_tc_ms) << "\n";
+    fout << "============================================================\n";
     fout.close();
+
+    destroy_B_plan(planB);
     return 0;
 }

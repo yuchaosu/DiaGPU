@@ -47,3 +47,22 @@ void multiply_sparse_noPad_with_timing_copy_plan(const DiagListF32& A,
 
 // A^power using repeated right-multiply by the original A
 DiagListF32 power_repeat_right(const DiagListF32& A, int power, float eps = 0.0f);
+
+// === NEW: Grouped C-centric (K-segmented) ===
+void multiply_sparse_grouped_with_timing_copy_plan(
+    const DiagListF32& A,
+    const DiaBPlan* planB,
+    int seg_size,            // e.g., 1024/2048/4096
+    float eps,
+    DiagListF32& C_out,
+    float* kernel_ms,
+    float* kernel_plus_copy_ms);
+
+// === NEW: Grouped A-centric with shared-memory A reuse ===
+void multiply_sparse_grouped_Areuse_with_timing_copy_plan(
+    const DiagListF32& A,
+    const DiaBPlan* planB,
+    int seg_size,            // e.g., 1024/2048/4096
+    DiagListF32& C_out,
+    float* kernel_ms,
+    float* kernel_plus_copy_ms);
