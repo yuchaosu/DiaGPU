@@ -7,7 +7,7 @@ NVCC_FLAGS = -std=c++17 -O2
 # Adjust -arch to match your GPU (e.g., sm_80, sm_86, sm_90, sm_120)
 ARCH       = -arch=sm_86
 # NVTX3 is header-only in CUDA >=12; older toolkits need -lnvToolsExt
-LIBS       =
+LIBS       = -lcusparse
 
 TARGET     = test_diag
 SRCS       = test_driver.cu diag_kernel.cu
