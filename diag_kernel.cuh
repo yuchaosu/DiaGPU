@@ -167,3 +167,31 @@ void launch_wide_kernel(const Task*       d_tasks,
                         float*            d_C_values,
                         int               num_tasks,
                         cudaStream_t      stream = 0);
+
+/* ---- Unified kernel (RECOMMENDED) ----
+ * Replaces all 4 per-bucket launches with ONE grid-stride launch.
+ * Warp-per-task: each warp handles one task (p_len ≤ 32).
+ * Requires: build_all(A,B,M,K,N, WARP_SIZE) for tile_size=32.
+ * Use build_unified_task_ids() for sorted task list.           */
+__global__ void
+__launch_bounds__(BLOCK_SIZE_MED, 8)
+diag_spmm_unified_kernel(const Task*       __restrict__ tasks,
+                         const int*        __restrict__ task_ids,
+                         const Group*      __restrict__ groups,
+                         const PairMeta*   __restrict__ pairs,
+                         const float*      __restrict__ A_values,
+                         const float*      __restrict__ packedB,
+                         const OutputDiag* __restrict__ c_diags,
+                         float*            __restrict__ C_values,
+                         int               num_tasks);
+
+void launch_unified_kernel(const Task*       d_tasks,
+                           const int*        d_task_ids,
+                           const Group*      d_groups,
+                           const PairMeta*   d_pairs,
+                           const float*      d_A_values,
+                           const float*      d_packedB,
+                           const OutputDiag* d_c_diags,
+                           float*            d_C_values,
+                           int               num_tasks,
+                           cudaStream_t      stream = 0);

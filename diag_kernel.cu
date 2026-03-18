@@ -544,3 +544,149 @@ void launch_wide_kernel(const Task*       d_tasks,
         d_A_values, d_packedB, d_c_diags, d_C_values,
         num_tasks);
 }
+
+/* ============================================================
+ * UNIFIED KERNEL — warp-per-task, grid-stride persistent
+ *
+ * THIS KERNEL REPLACES ALL 4 PER-BUCKET LAUNCHES.
+ *
+ * Problem it solves:
+ *   4 separate launches → each has tiny grid → most SMs idle.
+ *   Example: heavy bucket with 50 tasks on 36 SMs =
+ *   50/(36×12) = 0.12 waves → 14% occupancy.
+ *
+ * Solution:
+ *   1. Retile ALL tasks to p_len ≤ 32 (use build_all(A,B,M,K,N,32))
+ *   2. Pack 4 tasks per CTA (one warp per task)
+ *   3. Grid-stride: each warp cycles through the full task list
+ *   4. Single launch: all tasks in one grid
+ *
+ * Block:     128 threads = 4 warps
+ * Per-warp:  1 task (≤32 output positions per task)
+ * Shared:    0 bytes
+ * Barriers:  ZERO
+ * Grid:      persistent — set to SM_count × target_blocks_per_SM
+ *
+ * Grid-stride scheduling:
+ *   global_warp_id = blockIdx.x * 4 + warp_id
+ *   Each warp processes tasks:
+ *     global_warp_id, global_warp_id + total_warps, ...
+ *   Heavy tasks (sorted first) assigned to low-numbered warps.
+ *   All warps stay busy until task list is exhausted.
+ *
+ * Expected improvement (1024×1024, 21 diags, 36 SMs):
+ *   Before: 4 launches, smallest ≈50 blocks → 0.12 waves
+ *   After:  1 launch, ~1300 tasks, 288 CTAs → each warp
+ *           processes ~1.1 tasks → all SMs saturated
+ *   Waves per SM: 0.12 → >1.0
+ *   Achieved occupancy: 14% → >60%
+ *   SM busy: 1.4% → >50%
+ * ============================================================ */
+__global__ void
+__launch_bounds__(BLOCK_SIZE_MED, 8)
+diag_spmm_unified_kernel(const Task*       __restrict__ tasks,
+                         const int*        __restrict__ task_ids,
+                         const Group*      __restrict__ groups,
+                         const PairMeta*   __restrict__ pairs,
+                         const float*      __restrict__ A_values,
+                         const float*      __restrict__ packedB,
+                         const OutputDiag* __restrict__ c_diags,
+                         float*            __restrict__ C_values,
+                         int               num_tasks)
+{
+    const int warp_id = threadIdx.x / WARP_SIZE;        /* 0..3 */
+    const int lane_id = threadIdx.x % WARP_SIZE;        /* 0..31 */
+    const int warps_per_cta = BLOCK_SIZE_MED / WARP_SIZE; /* 4 */
+
+    /* Global warp index for grid-stride scheduling. */
+    const int global_warp = static_cast<int>(blockIdx.x) * warps_per_cta
+                          + warp_id;
+    const int total_warps = static_cast<int>(gridDim.x) * warps_per_cta;
+
+    /* Grid-stride: each warp processes tasks wi, wi+total_warps, ... */
+    for (int wi = global_warp; wi < num_tasks; wi += total_warps) {
+
+        const Task* __restrict__ tp = &tasks[task_ids[wi]];
+
+        /* Skip inactive lanes for this task. */
+        if (lane_id >= tp->p_len) continue;
+
+        float acc = 0.0f;
+
+        for (int gi = 0; gi < tp->group_count; ++gi) {
+            const Group* __restrict__ gp = &groups[tp->group_begin + gi];
+
+            /* A value in register — A-stationary reuse across pairs. */
+            const int p_a = gp->a_map_offset + lane_id;
+            const float a_val = (p_a >= 0 && p_a < gp->a_diag_len)
+                              ? A_values[gp->a_global_start + p_a]
+                              : 0.0f;
+
+            /* Pair loop: 2x unrolled for ILP. */
+            int pidx = gp->pair_begin;
+            const int pair_end = pidx + gp->pair_count;
+
+            for (; pidx + 1 < pair_end; pidx += 2) {
+                float b0 = packedB[pairs[pidx    ].packedB_offset + lane_id];
+                float b1 = packedB[pairs[pidx + 1].packedB_offset + lane_id];
+                acc += a_val * b0;
+                acc += a_val * b1;
+            }
+            if (pidx < pair_end) {
+                acc += a_val
+                     * packedB[pairs[pidx].packedB_offset + lane_id];
+            }
+        }
+
+        C_values[c_diags[tp->c_diag_idx].values_start
+                 + tp->p_begin + lane_id] = acc;
+    }
+}
+
+/* ============================================================
+ * Launch wrapper: unified kernel
+ *
+ * Usage:
+ *   // Preprocessing: tile_size=32 for max parallelism
+ *   PreprocessResult pr = build_all(A, B, M, K, N, WARP_SIZE);
+ *   auto ids = build_unified_task_ids(pr);
+ *   int* d_ids = upload(ids);
+ *   launch_unified_kernel(d_tasks, d_ids, ..., ids.size());
+ * ============================================================ */
+void launch_unified_kernel(const Task*       d_tasks,
+                           const int*        d_task_ids,
+                           const Group*      d_groups,
+                           const PairMeta*   d_pairs,
+                           const float*      d_A_values,
+                           const float*      d_packedB,
+                           const OutputDiag* d_c_diags,
+                           float*            d_C_values,
+                           int               num_tasks,
+                           cudaStream_t      stream)
+{
+    if (num_tasks == 0) return;
+
+    cudaFuncSetAttribute(diag_spmm_unified_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0 /* max L1 */);
+
+    int sm = get_sm_count();
+    const int target_bpsm = 8;     /* matches __launch_bounds__ */
+    int max_concurrent = sm * target_bpsm;
+
+    /* Grid-stride: launch exactly max_concurrent CTAs.
+     * Each CTA has 4 warps, each warp strides through tasks.
+     * With 1300 tasks and 288 CTAs × 4 warps = 1152 warps:
+     *   ~1.1 tasks per warp → all warps busy.               */
+    int grid_size = max_concurrent;
+
+    /* But don't launch more CTAs than needed. */
+    int min_ctas_needed = (num_tasks + 3) / 4;  /* 4 warps per CTA */
+    if (grid_size > min_ctas_needed)
+        grid_size = min_ctas_needed;
+
+    diag_spmm_unified_kernel<<<grid_size, BLOCK_SIZE_MED, 0, stream>>>(
+        d_tasks, d_task_ids, d_groups, d_pairs,
+        d_A_values, d_packedB, d_c_diags, d_C_values,
+        num_tasks);
+}

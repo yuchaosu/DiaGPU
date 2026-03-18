@@ -670,3 +670,30 @@ build_all_adaptive(const DiagMatrix& A, const DiagMatrix& B,
     sort_buckets_by_work(res);
     return res;
 }
+
+/* ============================================================
+ * build_unified_task_ids
+ *
+ * Creates a single flat task list (ALL tasks, no bucket
+ * separation) sorted by work_est DESCENDING.
+ *
+ * For use with launch_unified_kernel():
+ *   PreprocessResult pr = build_all(A, B, M, K, N, WARP_SIZE);
+ *   auto ids = build_unified_task_ids(pr);
+ *   int* d_ids = upload(ids);
+ *   launch_unified_kernel(..., d_ids, ..., ids.size());
+ *
+ * The descending sort ensures heavy tasks are assigned to
+ * low-numbered warps (processed first in grid-stride),
+ * minimizing tail effect.
+ * ============================================================ */
+inline std::vector<int>
+build_unified_task_ids(const PreprocessResult& pr)
+{
+    std::vector<int> ids(pr.tasks.size());
+    std::iota(ids.begin(), ids.end(), 0);
+    std::sort(ids.begin(), ids.end(), [&](int a, int b) {
+        return pr.tasks[a].work_est > pr.tasks[b].work_est;
+    });
+    return ids;
+}
