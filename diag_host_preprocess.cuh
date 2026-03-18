@@ -311,6 +311,15 @@ choose_tile_config(int diag_length, int num_contributors, int avg_pair_count)
 }
 
 /* ============================================================
+ * sort_buckets_by_work
+ *
+ * Sorts each bucket's task_ids in DESCENDING order of work_est.
+ * Heavy tasks launch first → fill SMs early; small tasks fill
+ * the gaps at the tail.  Reduces warp-level imbalance.
+ * ============================================================ */
+inline void sort_buckets_by_work(PreprocessResult& res);
+
+/* ============================================================
  * Step 6 + 7:  build_all  (master driver)
  *
  * Runs the full host preprocessing pipeline and returns
@@ -461,7 +470,21 @@ build_all(const DiagMatrix& A, const DiagMatrix& B,
         }
     }
 
+    sort_buckets_by_work(res);
     return res;
+}
+
+/* ---- sort_buckets_by_work (definition) ---- */
+inline void
+sort_buckets_by_work(PreprocessResult& res)
+{
+    auto cmp = [&](int a, int b) {
+        return res.tasks[a].work_est > res.tasks[b].work_est;
+    };
+    std::sort(res.light_task_ids.begin(),  res.light_task_ids.end(),  cmp);
+    std::sort(res.medium_task_ids.begin(), res.medium_task_ids.end(), cmp);
+    std::sort(res.heavy_task_ids.begin(),  res.heavy_task_ids.end(),  cmp);
+    std::sort(res.wide_task_ids.begin(),   res.wide_task_ids.end(),   cmp);
 }
 
 /* ============================================================
@@ -644,5 +667,6 @@ build_all_adaptive(const DiagMatrix& A, const DiagMatrix& B,
         }
     }
 
+    sort_buckets_by_work(res);
     return res;
 }
