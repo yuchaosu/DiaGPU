@@ -11,7 +11,7 @@ LIBS       = -lcusparse
 HAZEL_INCLUDES = -I ../../conda/conda_envs/cudadev/nsight-compute-2024.3.2/host/target-linux-x64/nvtx/include
 
 TARGET     = test_diag
-SRCS       = test_driver.cu diag_kernel.cu
+SRCS       = test_dia.cu diag_kernel.cu
 HEADERS    = diag_types.cuh diag_host_preprocess.cuh diag_kernel.cuh
 
 .PHONY: all clean run hazel
