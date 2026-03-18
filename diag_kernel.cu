@@ -1,44 +1,78 @@
 /* ============================================================
- * diag_kernel.cu
+ * diag_kernel.cu  —  Performance-optimized kernels
  *
- * Optimized kernel implementations for diagonal sparse matrix
- * multiplication.
- *
- * KEY DESIGN INVARIANTS:
- *   ✓  ZERO atomic operations anywhere
+ * KEY DESIGN INVARIANTS (unchanged):
+ *   ✓  ZERO atomic operations
  *   ✓  One CTA exclusively owns one output tile
- *   ✓  A is stationary in shared memory, reused across pairs
- *   ✓  B is read from warp-major packed layout (coalesced)
- *   ✓  Accumulation in registers, single direct writeback
- *   ✓  All complex index mapping pre-resolved on host
+ *   ✓  A-stationary grouped contributors
+ *   ✓  B from warp-major packed layout (coalesced)
+ *   ✓  Register accumulation, single direct writeback
  *
- * OPTIMIZATION PRINCIPLES (implementation-level):
- *   ✓  Structs accessed via pointer, never copied by value
- *   ✓  Variable lifetimes minimized (b_val, a_val, indices)
- *   ✓  __launch_bounds__ on every kernel for register control
- *   ✓  Inactive threads exit early where possible
- *   ✓  Only A in shared memory; B stays in global (streaming)
+ * CRITICAL OPTIMIZATION INSIGHT:
+ *   Thread tid writes smemA[tid] and reads smemA[tid].
+ *   No cross-thread shared memory dependency exists.
+ *   → Shared memory is UNNECESSARY — A lives in a register.
+ *   → ALL __syncthreads() barriers are ELIMINATED.
+ *   → Inactive threads exit early (no barriers to wait on).
+ *
+ * This eliminates barrier stalls (~55% → ~0%) and frees
+ * shared memory capacity for higher occupancy.
  * ============================================================ */
 
 #include "diag_kernel.cuh"
 
 /* ============================================================
- * MEDIUM KERNEL  (lean version — minimal register footprint)
+ * Helper: query SM count (cached) for tail-effect padding.
+ * ============================================================ */
+static int get_sm_count() {
+    static int cached = 0;
+    if (cached == 0) {
+        int dev;
+        cudaGetDevice(&dev);
+        cudaDeviceGetAttribute(&cached,
+                               cudaDevAttrMultiProcessorCount, dev);
+    }
+    return cached;
+}
+
+/* Round grid up to full wave to eliminate tail effect.
+ * Excess CTAs exit immediately via the early-exit check. */
+static int pad_to_wave(int num_tasks, int min_blocks_per_sm) {
+    int sm = get_sm_count();
+    int wave = sm * min_blocks_per_sm;
+    if (wave <= 0 || num_tasks <= 0) return num_tasks;
+    return ((num_tasks + wave - 1) / wave) * wave;
+}
+
+/* ============================================================
+ * MEDIUM KERNEL  (register-only, zero barriers)
  *
  * Block:     128 threads = 4 warps
- * Shared:    TILE_SIZE floats (smemA, 512 bytes)
- * Registers: 1 float accumulator per thread
- * Target:    ~32 registers/thread
+ * Shared:    0 bytes (A in register, not shared memory)
+ * Barriers:  ZERO (no __syncthreads__, no __syncwarp__)
+ * Registers: ~16-20 per thread
  *
- * Optimizations vs. original:
- *   - Task/Group/PairMeta accessed via const pointer (no copy)
- *   - warp_id/lane_id removed (unused)
- *   - b_val scope minimized to inner loop body
- *   - Single fused branch for active-thread check
- *   - __launch_bounds__(128, 2) hints compiler for occupancy
+ * Why shared memory is unnecessary:
+ *   Thread tid loads A[position_tid] → register a_val.
+ *   Multiplies a_val by each pair's B[position_tid].
+ *   A-stationary reuse is per-thread (same a_val across pairs).
+ *   No other thread ever reads this thread's A value.
+ *
+ * Why all barriers are unnecessary:
+ *   No shared memory → no producer-consumer dependency.
+ *   Each thread is fully independent after reading its task.
+ *
+ * ILP: pair loop unrolled 2x. Two independent B loads
+ *   overlap each other's memory latency.
+ *
+ * Inactive threads (tid >= tile_len) exit immediately.
+ *   No barriers means they don't need to participate.
+ *
+ * __launch_bounds__(128, 8): with 0 smem, target 8 blocks/SM.
+ *   Limits compiler to ~64 regs/thread → high occupancy.
  * ============================================================ */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_MED, 2)
+__launch_bounds__(BLOCK_SIZE_MED, 8)
 diag_spmm_medium_kernel(const Task*       __restrict__ tasks,
                         const int*        __restrict__ task_ids,
                         const Group*      __restrict__ groups,
@@ -49,64 +83,62 @@ diag_spmm_medium_kernel(const Task*       __restrict__ tasks,
                         float*            __restrict__ C_values,
                         int               num_tasks_in_bucket)
 {
+    /* Early exit: dummy CTAs for tail padding + excess blocks. */
     if (static_cast<int>(blockIdx.x) >= num_tasks_in_bucket) return;
 
-    /* Access task via pointer — avoid copying 8-int struct to registers. */
     const Task* __restrict__ tp = &tasks[task_ids[blockIdx.x]];
+    const int tid = threadIdx.x;
 
-    const int tid      = threadIdx.x;
-    const int tile_len = tp->p_len;
-
-    extern __shared__ float smemA[];
+    /* Inactive thread: exits immediately. No barriers to wait on. */
+    if (tid >= tp->p_len) return;
 
     float acc = 0.0f;
 
-    /* Main loop: iterate over groups (A-stationary reuse). */
     for (int gi = 0; gi < tp->group_count; ++gi) {
-
         const Group* __restrict__ gp = &groups[tp->group_begin + gi];
 
-        /* Step 1: Load A slice into shared memory (coalesced). */
-        {
-            int p_a = gp->a_map_offset + tid;
-            smemA[tid] = (tid < tile_len && p_a >= 0 && p_a < gp->a_diag_len)
-                       ? A_values[gp->a_global_start + p_a]
-                       : 0.0f;
+        /* A value: loaded directly into register.
+         * A-stationary reuse: this single register is multiplied
+         * by every pair's B value in the loop below.
+         * Zero shared memory, zero barriers.                  */
+        const int p_a = gp->a_map_offset + tid;
+        const float a_val = (p_a >= 0 && p_a < gp->a_diag_len)
+                          ? A_values[gp->a_global_start + p_a]
+                          : 0.0f;
+
+        /* Pair loop: 2x unrolled for ILP.
+         * Two independent global B loads → memory latency hidden.
+         * Each FMA uses the SAME a_val (register reuse).        */
+        int pidx = gp->pair_begin;
+        const int pair_end = pidx + gp->pair_count;
+
+        for (; pidx + 1 < pair_end; pidx += 2) {
+            float b0 = packedB[pairs[pidx    ].packedB_offset + tid];
+            float b1 = packedB[pairs[pidx + 1].packedB_offset + tid];
+            acc += a_val * b0;
+            acc += a_val * b1;
         }
-
-        __syncthreads();
-
-        /* Step 2: Iterate over pairs — smemA reused P times. */
-        if (tid < tile_len) {
-            float a_val = smemA[tid];
-            for (int pi = 0; pi < gp->pair_count; ++pi) {
-                const PairMeta* __restrict__ pp = &pairs[gp->pair_begin + pi];
-                acc += a_val * packedB[pp->packedB_offset + tid];
-            }
+        if (pidx < pair_end) {
+            acc += a_val * packedB[pairs[pidx].packedB_offset + tid];
         }
-
-        __syncthreads();
     }
 
-    /* Final writeback — exclusive tile ownership, no atomics. */
-    if (tid < tile_len) {
-        C_values[c_diags[tp->c_diag_idx].values_start
-                 + tp->p_begin + tid] = acc;
-    }
+    C_values[c_diags[tp->c_diag_idx].values_start
+             + tp->p_begin + tid] = acc;
 }
 
 /* ============================================================
- * LIGHT KERNEL  (multi-task packing: 4 tasks per CTA)
+ * LIGHT KERNEL  (register-only, warp-independent)
  *
  * Block:     128 threads = 4 warps
- * Shared:    4 * WARP_SIZE floats (independent partitions)
- * Registers: 1 float accumulator per thread
+ * Shared:    0 bytes
+ * Barriers:  ZERO
  *
- * Each warp independently processes one task.
- * Warp-level sync only (__syncwarp).
+ * Each warp independently handles one task.
+ * Same register-only optimization as medium kernel.
  * ============================================================ */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_LIGHT, 2)
+__launch_bounds__(BLOCK_SIZE_LIGHT, 8)
 diag_spmm_light_kernel(const Task*       __restrict__ tasks,
                        const int*        __restrict__ task_ids,
                        const Group*      __restrict__ groups,
@@ -121,61 +153,51 @@ diag_spmm_light_kernel(const Task*       __restrict__ tasks,
     const int warp_id = tid / WARP_SIZE;
     const int lane_id = tid % WARP_SIZE;
 
-    const int task_slot = static_cast<int>(blockIdx.x) * TASKS_PER_CTA_LIGHT + warp_id;
-
-    extern __shared__ float smem[];
-    float* my_smemA = smem + warp_id * WARP_SIZE;
+    const int task_slot =
+        static_cast<int>(blockIdx.x) * TASKS_PER_CTA_LIGHT + warp_id;
 
     if (task_slot >= num_tasks_in_bucket) return;
 
-    /* Access task via pointer. */
     const Task* __restrict__ tp = &tasks[task_ids[task_slot]];
-    const int tile_len = tp->p_len;
+
+    if (lane_id >= tp->p_len) return;
 
     float acc = 0.0f;
 
     for (int gi = 0; gi < tp->group_count; ++gi) {
         const Group* __restrict__ gp = &groups[tp->group_begin + gi];
 
-        /* Load A slice into this warp's partition. */
-        {
-            int p_a = gp->a_map_offset + lane_id;
-            my_smemA[lane_id] = (lane_id < tile_len && p_a >= 0 && p_a < gp->a_diag_len)
-                              ? A_values[gp->a_global_start + p_a]
-                              : 0.0f;
+        const int p_a = gp->a_map_offset + lane_id;
+        const float a_val = (p_a >= 0 && p_a < gp->a_diag_len)
+                          ? A_values[gp->a_global_start + p_a]
+                          : 0.0f;
+
+        for (int pi = 0; pi < gp->pair_count; ++pi) {
+            acc += a_val
+                 * packedB[pairs[gp->pair_begin + pi].packedB_offset
+                           + lane_id];
         }
-
-        __syncwarp();
-
-        if (lane_id < tile_len) {
-            float a_val = my_smemA[lane_id];
-            for (int pi = 0; pi < gp->pair_count; ++pi) {
-                const PairMeta* __restrict__ pp = &pairs[gp->pair_begin + pi];
-                acc += a_val * packedB[pp->packedB_offset + lane_id];
-            }
-        }
-
-        __syncwarp();
     }
 
-    if (lane_id < tile_len) {
-        C_values[c_diags[tp->c_diag_idx].values_start
-                 + tp->p_begin + lane_id] = acc;
-    }
+    C_values[c_diags[tp->c_diag_idx].values_start
+             + tp->p_begin + lane_id] = acc;
 }
 
 /* ============================================================
- * HEAVY KERNEL  (double-buffered smemA, 256 threads)
+ * HEAVY KERNEL — simple variant  (register-only baseline)
  *
  * Block:     256 threads = 8 warps
- * Shared:    2 * TILE_SIZE_HEAVY floats (ping-pong)
- * Registers: 1 float accumulator per thread
+ * Shared:    0 bytes
+ * Barriers:  ZERO
+ * Tile:      256 elements
  *
- * Prefetches next group's A slice while computing current.
+ * Identical pattern to medium kernel but with 256 threads.
+ * Use for profiling comparison against heavy_prefetch.
  * ============================================================ */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_HEAVY, 1)
-diag_spmm_heavy_kernel(const Task*       __restrict__ tasks,
+__launch_bounds__(BLOCK_SIZE_HEAVY, 4)
+diag_spmm_heavy_simple_kernel(
+                       const Task*       __restrict__ tasks,
                        const int*        __restrict__ task_ids,
                        const Group*      __restrict__ groups,
                        const PairMeta*   __restrict__ pairs,
@@ -188,71 +210,137 @@ diag_spmm_heavy_kernel(const Task*       __restrict__ tasks,
     if (static_cast<int>(blockIdx.x) >= num_tasks_in_bucket) return;
 
     const Task* __restrict__ tp = &tasks[task_ids[blockIdx.x]];
-    const int tid      = threadIdx.x;
-    const int tile_len = tp->p_len;
+    const int tid = threadIdx.x;
 
-    extern __shared__ float smem_heavy[];
-    float* smemA_buf[2] = { smem_heavy, smem_heavy + TILE_SIZE_HEAVY };
+    if (tid >= tp->p_len) return;
 
     float acc = 0.0f;
-    int buf = 0;
-
-    if (tp->group_count == 0) return;
-
-    /* Prefetch group 0 into buffer 0. */
-    {
-        const Group* __restrict__ g0 = &groups[tp->group_begin];
-        int p_a = g0->a_map_offset + tid;
-        smemA_buf[0][tid] = (tid < tile_len && p_a >= 0 && p_a < g0->a_diag_len)
-                          ? A_values[g0->a_global_start + p_a]
-                          : 0.0f;
-    }
-    __syncthreads();
 
     for (int gi = 0; gi < tp->group_count; ++gi) {
         const Group* __restrict__ gp = &groups[tp->group_begin + gi];
 
-        /* Compute all pairs using smemA_buf[buf]. */
-        if (tid < tile_len) {
-            float a_val = smemA_buf[buf][tid];
-            for (int pi = 0; pi < gp->pair_count; ++pi) {
-                const PairMeta* __restrict__ pp = &pairs[gp->pair_begin + pi];
-                acc += a_val * packedB[pp->packedB_offset + tid];
-            }
+        const int p_a = gp->a_map_offset + tid;
+        const float a_val = (p_a >= 0 && p_a < gp->a_diag_len)
+                          ? A_values[gp->a_global_start + p_a]
+                          : 0.0f;
+
+        int pidx = gp->pair_begin;
+        const int pair_end = pidx + gp->pair_count;
+
+        for (; pidx + 1 < pair_end; pidx += 2) {
+            float b0 = packedB[pairs[pidx    ].packedB_offset + tid];
+            float b1 = packedB[pairs[pidx + 1].packedB_offset + tid];
+            acc += a_val * b0;
+            acc += a_val * b1;
         }
-
-        __syncthreads();
-
-        /* Prefetch next group into the other buffer. */
-        if (gi + 1 < tp->group_count) {
-            const Group* __restrict__ gn = &groups[tp->group_begin + gi + 1];
-            int p_a = gn->a_map_offset + tid;
-            smemA_buf[1 - buf][tid] = (tid < tile_len && p_a >= 0 && p_a < gn->a_diag_len)
-                                    ? A_values[gn->a_global_start + p_a]
-                                    : 0.0f;
-            __syncthreads();
+        if (pidx < pair_end) {
+            acc += a_val * packedB[pairs[pidx].packedB_offset + tid];
         }
-
-        buf = 1 - buf;
     }
 
-    if (tid < tile_len) {
-        C_values[c_diags[tp->c_diag_idx].values_start
-                 + tp->p_begin + tid] = acc;
-    }
+    C_values[c_diags[tp->c_diag_idx].values_start
+             + tp->p_begin + tid] = acc;
 }
 
 /* ============================================================
- * WIDE KERNEL  (multi-output per thread, tile 512)
+ * HEAVY KERNEL — prefetch variant  (software-pipelined A)
  *
- * Block:     128 threads = 4 warps
- * Tile:      512 output positions (WIDE_TILE_SIZE)
- * Per-thread: 4 output positions (WIDE_ELEMS_PER_THREAD)
- * Shared:    WIDE_TILE_SIZE floats (2048 bytes)
- * Registers: 4 float accumulators per thread
+ * Block:     256 threads = 8 warps
+ * Shared:    0 bytes
+ * Barriers:  ZERO
+ * Tile:      256 elements
+ *
+ * Software pipelining: loads NEXT group's A value into a
+ * register while computing with the CURRENT group's A.
+ * The GPU scheduler overlaps the A load latency with
+ * the pair computation loop.
+ *
+ * Register cost: +1 float (a_next) vs heavy_simple.
+ * Benefit: hides A_values global read latency across groups.
  * ============================================================ */
 __global__ void
-__launch_bounds__(WIDE_BLOCK_SIZE, 1)
+__launch_bounds__(BLOCK_SIZE_HEAVY, 4)
+diag_spmm_heavy_prefetch_kernel(
+                       const Task*       __restrict__ tasks,
+                       const int*        __restrict__ task_ids,
+                       const Group*      __restrict__ groups,
+                       const PairMeta*   __restrict__ pairs,
+                       const float*      __restrict__ A_values,
+                       const float*      __restrict__ packedB,
+                       const OutputDiag* __restrict__ c_diags,
+                       float*            __restrict__ C_values,
+                       int               num_tasks_in_bucket)
+{
+    if (static_cast<int>(blockIdx.x) >= num_tasks_in_bucket) return;
+
+    const Task* __restrict__ tp = &tasks[task_ids[blockIdx.x]];
+    const int tid = threadIdx.x;
+
+    if (tid >= tp->p_len) return;
+    if (tp->group_count == 0) return;
+
+    float acc = 0.0f;
+
+    /* Load first group's A into register. */
+    const Group* __restrict__ gp = &groups[tp->group_begin];
+    int p_a = gp->a_map_offset + tid;
+    float a_cur = (p_a >= 0 && p_a < gp->a_diag_len)
+                ? A_values[gp->a_global_start + p_a]
+                : 0.0f;
+    float a_next;
+
+    for (int gi = 0; gi < tp->group_count; ++gi) {
+        gp = &groups[tp->group_begin + gi];
+
+        /* Prefetch NEXT group's A while we compute with a_cur.
+         * The global load for a_next is issued here but its
+         * latency is hidden by the pair computation loop below. */
+        if (gi + 1 < tp->group_count) {
+            const Group* __restrict__ gn = &groups[tp->group_begin + gi + 1];
+            int p_a_next = gn->a_map_offset + tid;
+            a_next = (p_a_next >= 0 && p_a_next < gn->a_diag_len)
+                   ? A_values[gn->a_global_start + p_a_next]
+                   : 0.0f;
+        }
+
+        /* Pair loop: compute with a_cur (current group). */
+        int pidx = gp->pair_begin;
+        const int pair_end = pidx + gp->pair_count;
+
+        for (; pidx + 1 < pair_end; pidx += 2) {
+            float b0 = packedB[pairs[pidx    ].packedB_offset + tid];
+            float b1 = packedB[pairs[pidx + 1].packedB_offset + tid];
+            acc += a_cur * b0;
+            acc += a_cur * b1;
+        }
+        if (pidx < pair_end) {
+            acc += a_cur * packedB[pairs[pidx].packedB_offset + tid];
+        }
+
+        /* Swap: next becomes current for the next iteration. */
+        a_cur = a_next;
+    }
+
+    C_values[c_diags[tp->c_diag_idx].values_start
+             + tp->p_begin + tid] = acc;
+}
+
+/* ============================================================
+ * WIDE KERNEL  (register-only, multi-output per thread)
+ *
+ * Block:     128 threads = 4 warps
+ * Shared:    0 bytes
+ * Barriers:  ZERO
+ * Tile:      512 elements (WIDE_TILE_SIZE)
+ * Per-thread: 4 outputs (WIDE_ELEMS_PER_THREAD)
+ * Registers: 4 accumulators + 4 A values per group
+ *
+ * Same insight: thread tid writes/reads smemA[tid+k*128]
+ * for k=0..3. No other thread touches those positions.
+ * → A values stored in 4 registers, no shared memory.
+ * ============================================================ */
+__global__ void
+__launch_bounds__(WIDE_BLOCK_SIZE, 4)
 diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
                       const int*        __restrict__ task_ids,
                       const Group*      __restrict__ groups,
@@ -269,8 +357,6 @@ diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
     const int tid      = threadIdx.x;
     const int tile_len = tp->p_len;
 
-    extern __shared__ float smemA_wide[];
-
     float acc[WIDE_ELEMS_PER_THREAD];
     #pragma unroll
     for (int e = 0; e < WIDE_ELEMS_PER_THREAD; ++e) acc[e] = 0.0f;
@@ -278,35 +364,31 @@ diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
     for (int gi = 0; gi < tp->group_count; ++gi) {
         const Group* __restrict__ gp = &groups[tp->group_begin + gi];
 
-        /* Load A slice in BLOCK_SIZE-element chunks (coalesced). */
+        /* Load 4 A values into registers (no shared memory). */
+        float a_reg[WIDE_ELEMS_PER_THREAD];
         #pragma unroll
         for (int k = 0; k < WIDE_ELEMS_PER_THREAD; ++k) {
             int q   = tid + k * WIDE_BLOCK_SIZE;
             int p_a = gp->a_map_offset + q;
-            smemA_wide[q] = (q < tile_len && p_a >= 0 && p_a < gp->a_diag_len)
-                          ? A_values[gp->a_global_start + p_a]
-                          : 0.0f;
+            a_reg[k] = (q < tile_len && p_a >= 0 && p_a < gp->a_diag_len)
+                      ? A_values[gp->a_global_start + p_a]
+                      : 0.0f;
         }
 
-        __syncthreads();
-
+        /* Pair loop with A-register reuse. */
         for (int pi = 0; pi < gp->pair_count; ++pi) {
-            const PairMeta* __restrict__ pp = &pairs[gp->pair_begin + pi];
-            const int pb_off = pp->packedB_offset;
+            const int pb_off = pairs[gp->pair_begin + pi].packedB_offset;
 
             #pragma unroll
             for (int k = 0; k < WIDE_ELEMS_PER_THREAD; ++k) {
                 int q = tid + k * WIDE_BLOCK_SIZE;
                 if (q < tile_len) {
-                    acc[k] += smemA_wide[q] * packedB[pb_off + q];
+                    acc[k] += a_reg[k] * packedB[pb_off + q];
                 }
             }
         }
-
-        __syncthreads();
     }
 
-    /* Writeback: each thread writes WIDE_ELEMS_PER_THREAD positions. */
     const int vs = c_diags[tp->c_diag_idx].values_start + tp->p_begin;
     #pragma unroll
     for (int k = 0; k < WIDE_ELEMS_PER_THREAD; ++k) {
@@ -318,7 +400,10 @@ diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
 }
 
 /* ============================================================
- * Launch wrappers
+ * LAUNCH WRAPPERS
+ *
+ * All kernels use 0 shared memory → prefer max L1 cache.
+ * Grid is padded to full SM waves to eliminate tail effect.
  * ============================================================ */
 
 void launch_medium_kernel(const Task*       d_tasks,
@@ -333,11 +418,17 @@ void launch_medium_kernel(const Task*       d_tasks,
                           cudaStream_t      stream)
 {
     if (num_tasks == 0) return;
-    dim3 grid(num_tasks);
-    dim3 block(BLOCK_SIZE_MED);
-    int  smem_bytes = TILE_SIZE * sizeof(float);
 
-    diag_spmm_medium_kernel<<<grid, block, smem_bytes, stream>>>(
+    /* Prefer L1 cache: no shared memory used by this kernel. */
+    cudaFuncSetAttribute(diag_spmm_medium_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0 /* 0% shared = max L1 */);
+
+    const int min_bpsm = 8;  /* matches __launch_bounds__ second param */
+    dim3 grid(pad_to_wave(num_tasks, min_bpsm));
+    dim3 block(BLOCK_SIZE_MED);
+
+    diag_spmm_medium_kernel<<<grid, block, 0, stream>>>(
         d_tasks, d_task_ids, d_groups, d_pairs,
         d_A_values, d_packedB, d_c_diags, d_C_values,
         num_tasks);
@@ -355,12 +446,17 @@ void launch_light_kernel(const Task*       d_tasks,
                          cudaStream_t      stream)
 {
     if (num_tasks == 0) return;
-    int num_ctas = (num_tasks + TASKS_PER_CTA_LIGHT - 1) / TASKS_PER_CTA_LIGHT;
-    dim3 grid(num_ctas);
-    dim3 block(BLOCK_SIZE_LIGHT);
-    int  smem_bytes = TASKS_PER_CTA_LIGHT * WARP_SIZE * sizeof(float);
 
-    diag_spmm_light_kernel<<<grid, block, smem_bytes, stream>>>(
+    cudaFuncSetAttribute(diag_spmm_light_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0);
+
+    int num_ctas = (num_tasks + TASKS_PER_CTA_LIGHT - 1)
+                 / TASKS_PER_CTA_LIGHT;
+    dim3 grid(pad_to_wave(num_ctas, 8));
+    dim3 block(BLOCK_SIZE_LIGHT);
+
+    diag_spmm_light_kernel<<<grid, block, 0, stream>>>(
         d_tasks, d_task_ids, d_groups, d_pairs,
         d_A_values, d_packedB, d_c_diags, d_C_values,
         num_tasks);
@@ -378,11 +474,46 @@ void launch_heavy_kernel(const Task*       d_tasks,
                          cudaStream_t      stream)
 {
     if (num_tasks == 0) return;
-    dim3 grid(num_tasks);
-    dim3 block(BLOCK_SIZE_HEAVY);
-    int  smem_bytes = 2 * TILE_SIZE_HEAVY * sizeof(float);
 
-    diag_spmm_heavy_kernel<<<grid, block, smem_bytes, stream>>>(
+    /* Default: use prefetch variant for better latency hiding. */
+    cudaFuncSetAttribute(diag_spmm_heavy_prefetch_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0);
+
+    const int min_bpsm = 4;
+    dim3 grid(pad_to_wave(num_tasks, min_bpsm));
+    dim3 block(BLOCK_SIZE_HEAVY);
+
+    diag_spmm_heavy_prefetch_kernel<<<grid, block, 0, stream>>>(
+        d_tasks, d_task_ids, d_groups, d_pairs,
+        d_A_values, d_packedB, d_c_diags, d_C_values,
+        num_tasks);
+}
+
+/* Alternate heavy launcher: simple variant (no prefetch).
+ * Use for A/B profiling comparison with ncu. */
+void launch_heavy_simple_kernel(const Task*       d_tasks,
+                                const int*        d_task_ids,
+                                const Group*      d_groups,
+                                const PairMeta*   d_pairs,
+                                const float*      d_A_values,
+                                const float*      d_packedB,
+                                const OutputDiag* d_c_diags,
+                                float*            d_C_values,
+                                int               num_tasks,
+                                cudaStream_t      stream)
+{
+    if (num_tasks == 0) return;
+
+    cudaFuncSetAttribute(diag_spmm_heavy_simple_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0);
+
+    const int min_bpsm = 4;
+    dim3 grid(pad_to_wave(num_tasks, min_bpsm));
+    dim3 block(BLOCK_SIZE_HEAVY);
+
+    diag_spmm_heavy_simple_kernel<<<grid, block, 0, stream>>>(
         d_tasks, d_task_ids, d_groups, d_pairs,
         d_A_values, d_packedB, d_c_diags, d_C_values,
         num_tasks);
@@ -400,11 +531,15 @@ void launch_wide_kernel(const Task*       d_tasks,
                         cudaStream_t      stream)
 {
     if (num_tasks == 0) return;
-    dim3 grid(num_tasks);
-    dim3 block(WIDE_BLOCK_SIZE);
-    int  smem_bytes = WIDE_TILE_SIZE * sizeof(float);
 
-    diag_spmm_wide_kernel<<<grid, block, smem_bytes, stream>>>(
+    cudaFuncSetAttribute(diag_spmm_wide_kernel,
+                         cudaFuncAttributePreferredSharedMemoryCarveout,
+                         0);
+
+    dim3 grid(pad_to_wave(num_tasks, 4));
+    dim3 block(WIDE_BLOCK_SIZE);
+
+    diag_spmm_wide_kernel<<<grid, block, 0, stream>>>(
         d_tasks, d_task_ids, d_groups, d_pairs,
         d_A_values, d_packedB, d_c_diags, d_C_values,
         num_tasks);

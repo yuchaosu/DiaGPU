@@ -1,20 +1,19 @@
 /* ============================================================
  * diag_kernel.cuh
  *
- * Device-side helper functions and kernel declarations for
- * diagonal sparse matrix multiplication.
+ * Kernel declarations for diagonal sparse matrix multiplication.
  *
- * Design invariants enforced by this layer:
+ * All kernels are register-only (zero shared memory):
+ *   Thread tid loads its own A value into a register and
+ *   reuses it across all pairs. No cross-thread dependency
+ *   → zero barriers, zero shared memory, maximum occupancy.
+ *
+ * Design invariants:
  *   - ZERO atomic operations
- *   - One CTA  ↔  one output tile  (exclusive ownership)
- *   - A loaded into shared memory, reused across group pairs
- *   - B read from warp-major packed layout (coalesced loads)
- *   - Accumulation in registers, direct final writeback
- *
- * Optimization principles:
- *   - Structs accessed via __restrict__ pointer, not copied
- *   - __launch_bounds__ on all kernels
- *   - Minimal register footprint per thread
+ *   - One CTA ↔ one output tile (exclusive ownership)
+ *   - A-stationary reuse (per-thread register)
+ *   - B from warp-major packed layout (coalesced)
+ *   - Register accumulation, direct final writeback
  * ============================================================ */
 #pragma once
 
@@ -23,9 +22,6 @@
 
 /* ============================================================
  * Device helper:  output_linear_index
- *
- * Maps (c_diag_idx, position_along_diagonal) →
- *      linear index into the flat C_values[] array.
  * ============================================================ */
 __device__ __forceinline__
 int output_linear_index(const OutputDiag* __restrict__ c_diags,
@@ -35,14 +31,13 @@ int output_linear_index(const OutputDiag* __restrict__ c_diags,
 }
 
 /* ============================================================
- * Kernel declarations (with __launch_bounds__)
+ * Kernel declarations
  * ============================================================ */
 
-/* ---- Medium kernel ----
- * Block: 128 threads, 1 CTA per task.
- * __launch_bounds__(128, 2) → target ≥2 blocks/SM. */
+/* Medium: 128 threads, register-only, 0 smem, 0 barriers.
+ * __launch_bounds__(128, 8) → targets 8 blocks/SM. */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_MED, 2)
+__launch_bounds__(BLOCK_SIZE_MED, 8)
 diag_spmm_medium_kernel(const Task*       __restrict__ tasks,
                         const int*        __restrict__ task_ids,
                         const Group*      __restrict__ groups,
@@ -53,10 +48,9 @@ diag_spmm_medium_kernel(const Task*       __restrict__ tasks,
                         float*            __restrict__ C_values,
                         int               num_tasks_in_bucket);
 
-/* ---- Light kernel ----
- * Block: 128 threads, 4 tasks packed per CTA (1 per warp). */
+/* Light: 128 threads, 4 tasks per CTA (1 per warp). */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_LIGHT, 2)
+__launch_bounds__(BLOCK_SIZE_LIGHT, 8)
 diag_spmm_light_kernel(const Task*       __restrict__ tasks,
                        const int*        __restrict__ task_ids,
                        const Group*      __restrict__ groups,
@@ -67,12 +61,12 @@ diag_spmm_light_kernel(const Task*       __restrict__ tasks,
                        float*            __restrict__ C_values,
                        int               num_tasks_in_bucket);
 
-/* ---- Heavy kernel ----
- * Block: 256 threads, double-buffered smemA.
- * __launch_bounds__(256, 1) → at least 1 block/SM. */
+/* Heavy simple: 256 threads, register-only baseline.
+ * For profiling comparison against heavy_prefetch. */
 __global__ void
-__launch_bounds__(BLOCK_SIZE_HEAVY, 1)
-diag_spmm_heavy_kernel(const Task*       __restrict__ tasks,
+__launch_bounds__(BLOCK_SIZE_HEAVY, 4)
+diag_spmm_heavy_simple_kernel(
+                       const Task*       __restrict__ tasks,
                        const int*        __restrict__ task_ids,
                        const Group*      __restrict__ groups,
                        const PairMeta*   __restrict__ pairs,
@@ -82,10 +76,24 @@ diag_spmm_heavy_kernel(const Task*       __restrict__ tasks,
                        float*            __restrict__ C_values,
                        int               num_tasks_in_bucket);
 
-/* ---- Wide kernel ----
- * Block: 128 threads, tile 512, 4 outputs per thread. */
+/* Heavy prefetch: 256 threads, software-pipelined A loads.
+ * Loads next group's A while computing current group. */
 __global__ void
-__launch_bounds__(WIDE_BLOCK_SIZE, 1)
+__launch_bounds__(BLOCK_SIZE_HEAVY, 4)
+diag_spmm_heavy_prefetch_kernel(
+                       const Task*       __restrict__ tasks,
+                       const int*        __restrict__ task_ids,
+                       const Group*      __restrict__ groups,
+                       const PairMeta*   __restrict__ pairs,
+                       const float*      __restrict__ A_values,
+                       const float*      __restrict__ packedB,
+                       const OutputDiag* __restrict__ c_diags,
+                       float*            __restrict__ C_values,
+                       int               num_tasks_in_bucket);
+
+/* Wide: 128 threads, tile 512, 4 outputs per thread. */
+__global__ void
+__launch_bounds__(WIDE_BLOCK_SIZE, 4)
 diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
                       const int*        __restrict__ task_ids,
                       const Group*      __restrict__ groups,
@@ -98,6 +106,9 @@ diag_spmm_wide_kernel(const Task*       __restrict__ tasks,
 
 /* ============================================================
  * Host-side launch wrappers
+ *
+ * All use 0 shared memory, max L1 carveout, and
+ * grid padding for tail-effect elimination.
  * ============================================================ */
 
 void launch_medium_kernel(const Task*       d_tasks,
@@ -122,6 +133,7 @@ void launch_light_kernel(const Task*       d_tasks,
                          int               num_tasks,
                          cudaStream_t      stream = 0);
 
+/* Default heavy launcher — uses prefetch variant. */
 void launch_heavy_kernel(const Task*       d_tasks,
                          const int*        d_task_ids,
                          const Group*      d_groups,
@@ -132,6 +144,18 @@ void launch_heavy_kernel(const Task*       d_tasks,
                          float*            d_C_values,
                          int               num_tasks,
                          cudaStream_t      stream = 0);
+
+/* Alternate heavy launcher — simple variant for profiling. */
+void launch_heavy_simple_kernel(const Task*       d_tasks,
+                                const int*        d_task_ids,
+                                const Group*      d_groups,
+                                const PairMeta*   d_pairs,
+                                const float*      d_A_values,
+                                const float*      d_packedB,
+                                const OutputDiag* d_c_diags,
+                                float*            d_C_values,
+                                int               num_tasks,
+                                cudaStream_t      stream = 0);
 
 void launch_wide_kernel(const Task*       d_tasks,
                         const int*        d_task_ids,
