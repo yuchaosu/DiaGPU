@@ -359,6 +359,39 @@ cusparse_spgemm_benchmark(const DiagMatrix& A, const DiagMatrix& B,
         &bufSize2, dBuf2));
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    /* Reset descriptor and matC for the timed run (SpGEMM is stateful) */
+    CUSPARSE_CHECK(cusparseSpGEMM_destroyDescr(spgemm_desc));
+    CUSPARSE_CHECK(cusparseDestroySpMat(matC));
+    CUSPARSE_CHECK(cusparseSpGEMM_createDescr(&spgemm_desc));
+    CUSPARSE_CHECK(cusparseCreateCsr(&matC, M, N, 0,
+        NULL, NULL, NULL,
+        CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
+        CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F));
+    cudaFree(dBuf1); cudaFree(dBuf2);
+    dBuf1 = NULL; dBuf2 = NULL;
+    bufSize1 = 0; bufSize2 = 0;
+
+    CUSPARSE_CHECK(cusparseSpGEMM_workEstimation(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE,
+        &alpha, matA, matB, &beta, matC, CUDA_R_32F,
+        CUSPARSE_SPGEMM_DEFAULT, spgemm_desc,
+        &bufSize1, NULL));
+    CUDA_CHECK(cudaMalloc(&dBuf1, bufSize1));
+    CUSPARSE_CHECK(cusparseSpGEMM_workEstimation(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE,
+        &alpha, matA, matB, &beta, matC, CUDA_R_32F,
+        CUSPARSE_SPGEMM_DEFAULT, spgemm_desc,
+        &bufSize1, dBuf1));
+    CUSPARSE_CHECK(cusparseSpGEMM_compute(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE,
+        &alpha, matA, matB, &beta, matC, CUDA_R_32F,
+        CUSPARSE_SPGEMM_DEFAULT, spgemm_desc,
+        &bufSize2, NULL));
+    CUDA_CHECK(cudaMalloc(&dBuf2, bufSize2));
+
     /* ---- Timed run ---- */
     cudaEvent_t ev_start, ev_stop;
     CUDA_CHECK(cudaEventCreate(&ev_start));
