@@ -137,20 +137,55 @@ print_preprocess_summary(const PreprocessResult& pr)
     printf("  PackedB floats   : %zu\n", pr.packedB.size());
     printf("\n");
 
-    /* Print first few tasks as samples */
-    size_t show_tasks = std::min(pr.tasks.size(), (size_t)8);
-    for (size_t i = 0; i < show_tasks; ++i) {
+    /* Print first few tasks per bucket for debugging */
+    int shown[4] = {};   // count per bucket
+    const int MAX_PER_BUCKET = 3;
+    for (size_t i = 0; i < pr.tasks.size(); ++i) {
         const Task& t = pr.tasks[i];
+        int b = t.bucket;
+        if (b < 0 || b > 3) b = 1;
+        if (shown[b] >= MAX_PER_BUCKET) continue;
+        shown[b]++;
         const char* bkt = (t.bucket == 0) ? "LIGHT" :
                           (t.bucket == 1) ? "MEDIUM" :
                           (t.bucket == 2) ? "HEAVY" : "WIDE";
-        printf("  Task %zu: c_diag_offset=%d  p=[%d..%d)  "
+        printf("  Task %zu: c_diag_offset=%d  p=[%d..%d)  p_len=%d  "
                "groups=%d  work=%d  bucket=%s\n",
                i, t.c_offset, t.p_begin, t.p_begin + t.p_len,
-               t.group_count, t.work_est, bkt);
+               t.p_len, t.group_count, t.work_est, bkt);
     }
-    if (pr.tasks.size() > show_tasks)
-        printf("  ... (%zu more tasks)\n", pr.tasks.size() - show_tasks);
+    printf("  ... (%zu total tasks)\n\n", pr.tasks.size());
+
+    /* DEBUG: Check for tile size vs kernel expectation mismatches */
+    printf("=== DEBUG: Bucket tile-size audit ===\n");
+    printf("  LIGHT kernel expects tile_size = %d (WARP_SIZE)\n", TILE_SIZE_LIGHT);
+    printf("  MEDIUM kernel expects tile_size = %d\n", TILE_SIZE);
+    printf("  HEAVY kernel expects tile_size = %d\n", TILE_SIZE_HEAVY);
+    printf("  WIDE kernel expects tile_size = %d\n", WIDE_TILE_SIZE);
+    int oversize_light = 0, oversize_heavy = 0;
+    for (size_t i = 0; i < pr.tasks.size(); ++i) {
+        const Task& t = pr.tasks[i];
+        if (t.bucket == 0 && t.p_len > TILE_SIZE_LIGHT) {
+            if (oversize_light < 3)
+                printf("  WARNING: LIGHT task %zu has p_len=%d > %d!\n",
+                       i, t.p_len, TILE_SIZE_LIGHT);
+            oversize_light++;
+        }
+        if (t.bucket == 2 && t.p_len > TILE_SIZE_HEAVY) {
+            if (oversize_heavy < 3)
+                printf("  WARNING: HEAVY task %zu has p_len=%d > %d!\n",
+                       i, t.p_len, TILE_SIZE_HEAVY);
+            oversize_heavy++;
+        }
+    }
+    if (oversize_light > 0)
+        printf("  TOTAL: %d LIGHT tasks with p_len > %d (BUG: kernel will only compute first %d elements!)\n",
+               oversize_light, TILE_SIZE_LIGHT, TILE_SIZE_LIGHT);
+    if (oversize_heavy > 0)
+        printf("  TOTAL: %d HEAVY tasks with p_len > %d\n",
+               oversize_heavy, TILE_SIZE_HEAVY);
+    if (oversize_light == 0 && oversize_heavy == 0)
+        printf("  OK: All tasks have tile sizes matching their kernel.\n");
     printf("\n");
 }
 
