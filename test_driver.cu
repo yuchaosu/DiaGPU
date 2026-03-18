@@ -3,58 +3,20 @@
  *
  * End-to-end test for the DiagSpMM framework.
  *
- * Uses a small 4×4 example to verify correctness:
+ * Uses a 1024×1024 example with 21 diagonals per matrix to
+ * exercise all four kernel buckets (light, medium, heavy, wide).
  *
- *   A (4x4) diagonals:
- *     d=-1 : [1, 2, 3]
- *     d= 0 : [4, 5, 6, 7]
- *     d= 1 : [8, 9, 10]
+ *   A (1024×1024): 21 diagonals, offsets d ∈ {-10, -9, ..., 0, ..., 9, 10}
+ *   B (1024×1024): 21 diagonals, same offsets
  *
- *   B (4x4) diagonals:
- *     d= 0 : [1, 1, 1, 1]
- *     d= 1 : [2, 2, 2]
+ * Values are generated procedurally:
+ *   A[diag d, position p] = 1.0 + 0.01 * ((d + 10) * 13 + p) % 97
+ *   B[diag d, position p] = 1.0 + 0.01 * ((d + 10) * 7  + p) % 89
  *
- *   A as dense:       B as dense:
- *     4  8  0  0        1  2  0  0
- *     1  5  9  0        0  1  2  0
- *     0  2  6 10        0  0  1  2
- *     0  0  3  7        0  0  0  1
- *
- *   C = A × B (dense):
- *     4  16  16   0
- *     1   7  19  18
- *     0   2  10  22
- *     0   0   3  13
- *
- *   C diagonals (expected):
- *     d=-1 : [1, 2, 3]
- *     d= 0 : [4, 7, 10, 13]
- *     d= 1 : [16, 19, 22]
- *     d= 2 : [16, 18]
- *
- * Contributor structure for this example:
- *
- *   d_c = -1:  { (d_a=-1, d_b=0) }
- *     1 group (a=-1), 1 pair
- *
- *   d_c =  0:  { (d_a=-1, d_b=1), (d_a=0, d_b=0) }
- *     2 groups: group(a=-1) with 1 pair, group(a=0) with 1 pair
- *     smemA loaded twice (once per group), each reused by 1 pair
- *
- *   d_c =  1:  { (d_a=0, d_b=1), (d_a=1, d_b=0) }
- *     2 groups: group(a=0) with 1 pair, group(a=1) with 1 pair
- *
- *   d_c =  2:  { (d_a=1, d_b=1) }
- *     1 group (a=1), 1 pair
- *
- * packedB example for d_c=0, group(a=-1), pair(d_b=1):
- *   tile covers positions [0..3] of output diagonal 0
- *   b_map_offset = c_sr + d_a - b_sr = 0 + (-1) - 0 = -1
- *   q=0: p_b = -1+0 = -1 → invalid → 0.0
- *   q=1: p_b = -1+1 =  0 → B.values[4+0] = 2.0
- *   q=2: p_b = -1+2 =  1 → B.values[4+1] = 2.0
- *   q=3: p_b = -1+3 =  2 → B.values[4+2] = 2.0
- *   → packedB for this pair = [0.0, 2.0, 2.0, 2.0] (padded to 32)
+ * Output C has up to 41 diagonals (d_c ∈ {-20, ..., 0, ..., 20}).
+ * Near the center (d_c ≈ 0) up to 21 contributor pairs exist per
+ * output diagonal, generating heavy tiles; near the edges (|d_c| ≈ 20)
+ * only 1 pair exists, generating light tiles.
  *
  * Compile:
  *   nvcc test_driver.cu diag_kernel.cu -o test_diag -std=c++17
@@ -175,7 +137,9 @@ print_preprocess_summary(const PreprocessResult& pr)
     printf("  PackedB floats   : %zu\n", pr.packedB.size());
     printf("\n");
 
-    for (size_t i = 0; i < pr.tasks.size(); ++i) {
+    /* Print first few tasks as samples */
+    size_t show_tasks = std::min(pr.tasks.size(), (size_t)8);
+    for (size_t i = 0; i < show_tasks; ++i) {
         const Task& t = pr.tasks[i];
         const char* bkt = (t.bucket == 0) ? "LIGHT" :
                           (t.bucket == 1) ? "MEDIUM" :
@@ -184,25 +148,39 @@ print_preprocess_summary(const PreprocessResult& pr)
                "groups=%d  work=%d  bucket=%s\n",
                i, t.c_offset, t.p_begin, t.p_begin + t.p_len,
                t.group_count, t.work_est, bkt);
-
-        for (int gi = 0; gi < t.group_count; ++gi) {
-            const Group& g = pr.groups[t.group_begin + gi];
-            printf("    Group %d: a_offset=%d  a_map_offset=%d  "
-                   "a_diag_len=%d  pairs=%d\n",
-                   gi, g.a_offset, g.a_map_offset,
-                   g.a_diag_len, g.pair_count);
-
-            for (int pi = 0; pi < g.pair_count; ++pi) {
-                const PairMeta& p = pr.pairs[g.pair_begin + pi];
-                printf("      Pair %d: b_offset=%d  valid=[%d..%d)  "
-                       "packedB_offset=%d\n",
-                       pi, p.b_offset,
-                       p.out_valid_begin, p.out_valid_end,
-                       p.packedB_offset);
-            }
-        }
     }
+    if (pr.tasks.size() > show_tasks)
+        printf("  ... (%zu more tasks)\n", pr.tasks.size() - show_tasks);
     printf("\n");
+}
+
+/* ============================================================
+ * Helper: build a 1024×1024 DiagMatrix with 21 diagonals
+ *         (offsets -10 to +10) and procedural values.
+ * ============================================================ */
+static DiagMatrix
+build_1024_matrix(int rows, int cols,
+                  int seed_a, int seed_b)
+{
+    DiagMatrix mat;
+    mat.rows = rows;
+    mat.cols = cols;
+    mat.num_diags = 21;
+
+    int val_offset = 0;
+    for (int i = 0; i < 21; ++i) {
+        int d = i - 10;   // offsets: -10, -9, ..., 0, ..., 9, 10
+        int len = DiagMatrix::diag_length(rows, cols, d);
+        mat.offsets.push_back(d);
+        mat.diag_starts.push_back(val_offset);
+        mat.diag_lengths.push_back(len);
+        for (int p = 0; p < len; ++p) {
+            float v = 1.0f + 0.01f * (float)(((d + 10) * seed_a + p) % seed_b);
+            mat.values.push_back(v);
+        }
+        val_offset += len;
+    }
+    return mat;
 }
 
 /* ============================================================
@@ -210,38 +188,30 @@ print_preprocess_summary(const PreprocessResult& pr)
  * ============================================================ */
 int main()
 {
-    printf("DiagSpMM Framework Test (with per-bucket dispatch)\n");
-    printf("===================================================\n\n");
+    printf("DiagSpMM Framework Test — 1024×1024, 21 diagonals\n");
+    printf("==================================================\n\n");
 
     /* ---- Build input matrices ---- */
-    const int M = 4, K = 4, N = 4;
+    const int M = 1024, K = 1024, N = 1024;
 
-    DiagMatrix A;
-    A.rows = M;  A.cols = K;  A.num_diags = 3;
-    A.offsets     = { -1,  0,  1 };
-    A.values      = {  1,  2,  3,          // d=-1, length 3
-                       4,  5,  6,  7,      // d= 0, length 4
-                       8,  9, 10 };        // d= 1, length 3
-    A.diag_starts  = { 0, 3, 7 };
-    A.diag_lengths = { 3, 4, 3 };
+    DiagMatrix A = build_1024_matrix(M, K, 13, 97);
+    DiagMatrix B = A;
 
-    DiagMatrix B;
-    B.rows = K;  B.cols = N;  B.num_diags = 2;
-    B.offsets     = {  0,  1 };
-    B.values      = {  1,  1,  1,  1,      // d= 0, length 4
-                       2,  2,  2 };        // d= 1, length 3
-    B.diag_starts  = { 0, 4 };
-    B.diag_lengths = { 4, 3 };
+    printf("A: %dx%d, %d diagonals, %zu values\n",
+           A.rows, A.cols, A.num_diags, A.values.size());
+    printf("B: %dx%d, %d diagonals, %zu values\n",
+           B.rows, B.cols, B.num_diags, B.values.size());
+    printf("\n");
 
     /* ---- CPU reference ---- */
     std::vector<float> C_dense;
     cpu_diag_multiply(A, B, M, K, N, C_dense);
 
-    printf("CPU reference C (dense):\n");
-    for (int i = 0; i < M; ++i) {
+    printf("CPU reference C — sample values (top-left 4×4):\n");
+    for (int i = 0; i < 4; ++i) {
         printf("  ");
-        for (int j = 0; j < N; ++j)
-            printf("%6.1f", C_dense[i * N + j]);
+        for (int j = 0; j < 4; ++j)
+            printf("%10.3f", C_dense[i * N + j]);
         printf("\n");
     }
     printf("\n");
@@ -356,35 +326,53 @@ int main()
     NVTX_POP(); /* device_download */
 
     /* ---- Verify against CPU reference ---- */
-    printf("=== GPU Output (diagonal format) ===\n");
+    printf("=== Verification ===\n");
 
     bool pass = true;
+    int mismatches = 0;
+    const float tol = 1e-2f;   /* allow small fp accumulation error */
+
     for (size_t di = 0; di < pr.output_diags.size(); ++di) {
         const OutputDiag& od = pr.output_diags[di];
-        printf("  d_c = %2d:  [", od.offset);
         for (int p = 0; p < od.length; ++p) {
             float gpu_val = h_C_values[od.values_start + p];
-            if (p > 0) printf(", ");
-            printf("%.1f", gpu_val);
-
-            /* Compare with CPU dense reference */
             int row = od.start_row + p;
             int col = od.start_col + p;
             float cpu_val = C_dense[row * N + col];
-            if (std::fabs(gpu_val - cpu_val) > 1e-5f) {
-                printf("(!= %.1f)", cpu_val);
+            float diff = std::fabs(gpu_val - cpu_val);
+            if (diff > tol) {
+                if (mismatches < 10) {
+                    printf("  MISMATCH d_c=%d p=%d (%d,%d): gpu=%.4f cpu=%.4f diff=%.4f\n",
+                           od.offset, p, row, col, gpu_val, cpu_val, diff);
+                }
+                ++mismatches;
                 pass = false;
             }
         }
+    }
+
+    if (pass) {
+        printf("  PASS: All %d output values match CPU reference (tol=%.0e).\n",
+               pr.total_c_values, tol);
+    } else {
+        printf("  FAIL: %d / %d mismatches (tol=%.0e).\n",
+               mismatches, pr.total_c_values, tol);
+    }
+
+    /* Print a few sample output diagonals for sanity */
+    printf("\n=== Sample GPU output diagonals ===\n");
+    for (size_t di = 0; di < pr.output_diags.size(); ++di) {
+        const OutputDiag& od = pr.output_diags[di];
+        printf("  d_c = %3d  (len=%4d):  [", od.offset, od.length);
+        int show = std::min(od.length, 4);
+        for (int p = 0; p < show; ++p) {
+            if (p > 0) printf(", ");
+            printf("%.3f", h_C_values[od.values_start + p]);
+        }
+        if (od.length > 4) printf(", ...");
         printf("]\n");
     }
     printf("\n");
-
-    if (pass) {
-        printf("PASS: GPU output matches CPU reference.\n");
-    } else {
-        printf("FAIL: Mismatch detected!\n");
-    }
 
     /* ---- Cleanup ---- */
     cudaFree(d_A_values);
