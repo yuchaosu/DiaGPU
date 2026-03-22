@@ -407,7 +407,14 @@ dia_to_csr(const DiagMatrix& M, int n,
 }
 
 /* Run one complete cuSPARSE SpGEMM cycle on pre-uploaded CSR data.
- * Returns kernel time via cudaEvent.  Optionally writes dense C. */
+ * Follows the official NVIDIA sample exactly:
+ *   1. Create matC with pre-allocated dC_csrOffsets
+ *   2. workEstimation (query + execute)
+ *   3. compute (query + execute)  ← timed
+ *   4. SpMatGetSize → allocate dC_columns, dC_values
+ *   5. cusparseCsrSetPointers
+ *   6. SpGEMM_copy
+ * Returns kernel time (step 3 only) via cudaEvent. */
 static float
 cusparse_single_run(cusparseHandle_t handle,
                     cusparseSpMatDescr_t matA,
@@ -417,9 +424,13 @@ cusparse_single_run(cusparseHandle_t handle,
 {
     float alpha = 1.0f, beta = 0.0f;
 
+    /* Pre-allocate C row offsets (required by the API). */
+    int* dC_csrOffsets = NULL;
+    CUDA_CHECK(cudaMalloc(&dC_csrOffsets, (n + 1) * sizeof(int)));
+
     cusparseSpMatDescr_t matC;
     CUSPARSE_CHECK(cusparseCreateCsr(&matC, n, n, 0,
-        NULL, NULL, NULL,
+        dC_csrOffsets, NULL, NULL,
         CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
         CUSPARSE_INDEX_BASE_ZERO, CUDA_R_32F));
 
@@ -450,7 +461,7 @@ cusparse_single_run(cusparseHandle_t handle,
         CUSPARSE_SPGEMM_DEFAULT, desc, &buf2, NULL));
     CUDA_CHECK(cudaMalloc(&dBuf2, buf2));
 
-    /* Timed compute */
+    /* Timed compute (actual SpGEMM) */
     cudaEvent_t ev_start, ev_stop;
     CUDA_CHECK(cudaEventCreate(&ev_start));
     CUDA_CHECK(cudaEventCreate(&ev_stop));
@@ -467,30 +478,34 @@ cusparse_single_run(cusparseHandle_t handle,
     float ms = 0.0f;
     CUDA_CHECK(cudaEventElapsedTime(&ms, ev_start, ev_stop));
 
+    /* Phase 3: get C structure size, allocate, set pointers, copy. */
+    int64_t C_rows, C_cols, C_nnz;
+    CUSPARSE_CHECK(cusparseSpMatGetSize(matC, &C_rows, &C_cols, &C_nnz));
+
+    int*   dC_columns = NULL;
+    float* dC_values  = NULL;
+    CUDA_CHECK(cudaMalloc(&dC_columns, C_nnz * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&dC_values,  C_nnz * sizeof(float)));
+
+    /* Update matC with the newly allocated column/value arrays. */
+    CUSPARSE_CHECK(cusparseCsrSetPointers(matC,
+        dC_csrOffsets, dC_columns, dC_values));
+
+    /* Copy the final product into matC. */
+    CUSPARSE_CHECK(cusparseSpGEMM_copy(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        CUSPARSE_OPERATION_NON_TRANSPOSE,
+        &alpha, matA, matB, &beta, matC, CUDA_R_32F,
+        CUSPARSE_SPGEMM_DEFAULT, desc));
+
     /* Optionally extract dense result */
     if (C_dense_out) {
-        CUSPARSE_CHECK(cusparseSpGEMM_copy(
-            handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
-            CUSPARSE_OPERATION_NON_TRANSPOSE,
-            &alpha, matA, matB, &beta, matC, CUDA_R_32F,
-            CUSPARSE_SPGEMM_DEFAULT, desc));
-
-        int64_t C_rows, C_cols, C_nnz;
-        CUSPARSE_CHECK(cusparseSpMatGetSize(matC, &C_rows, &C_cols, &C_nnz));
-
-        void *p_off, *p_col, *p_val;
-        cusparseIndexType_t off_t, col_t;
-        cusparseIndexBase_t base;
-        cudaDataType val_t;
-        CUSPARSE_CHECK(cusparseCsrGet(matC, &C_rows, &C_cols, &C_nnz,
-            &p_off, &p_col, &p_val, &off_t, &col_t, &base, &val_t));
-
         std::vector<int>   hC_off(C_rows + 1);
         std::vector<int>   hC_col(C_nnz);
         std::vector<float> hC_val(C_nnz);
-        CUDA_CHECK(cudaMemcpy(hC_off.data(), p_off, (C_rows + 1) * sizeof(int), cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(hC_col.data(), p_col, C_nnz * sizeof(int),        cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(hC_val.data(), p_val, C_nnz * sizeof(float),      cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(hC_off.data(), dC_csrOffsets, (C_rows + 1) * sizeof(int), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(hC_col.data(), dC_columns,    C_nnz * sizeof(int),        cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(hC_val.data(), dC_values,     C_nnz * sizeof(float),      cudaMemcpyDeviceToHost));
 
         C_dense_out->assign(n * n, 0.0f);
         for (int i = 0; i < (int)C_rows; ++i)
@@ -505,6 +520,9 @@ cusparse_single_run(cusparseHandle_t handle,
     CUSPARSE_CHECK(cusparseDestroySpMat(matC));
     cudaFree(dBuf1);
     cudaFree(dBuf2);
+    cudaFree(dC_csrOffsets);
+    cudaFree(dC_columns);
+    cudaFree(dC_values);
 
     return ms;
 }
