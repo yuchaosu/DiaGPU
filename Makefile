@@ -10,22 +10,63 @@ ARCH       = -arch=sm_86
 LIBS       = -lcusparse
 HAZEL_INCLUDES = -I ../../conda/conda_envs/cudadev/nsight-compute-2024.3.2/host/target-linux-x64/nvtx/include
 
+# Tuning: max registers per thread (0 = unlimited, try 32/48/64)
+# Lower values increase occupancy but may spill to local memory.
+# Usage: make MAXREG=32
+MAXREG     ?= 0
+
 TARGET     = test_diag
 SRCS       = test_dia.cu diag_kernel.cu
 HEADERS    = diag_types.cuh diag_host_preprocess.cuh diag_kernel.cuh
 
-.PHONY: all clean run hazel
+# Build register-limit flag only if MAXREG > 0
+ifneq ($(MAXREG),0)
+  REG_FLAG = -maxrregcount=$(MAXREG)
+else
+  REG_FLAG =
+endif
+
+# Paper algorithms (standalone, no NVTX/cuSPARSE dependency)
+PAPER_TARGET = paper_alg
+PAPER_SRCS   = paper_algorithms.cu paper_hm_kernel.cu
+
+# Benchmark comparison (DiagSpMM vs Paper-HM vs cuSPARSE)
+BENCH_TARGET = bench_compare
+BENCH_SRCS   = bench_compare.cu paper_hm_kernel.cu diag_kernel.cu
+BENCH_HEADERS = $(HEADERS) paper_hm.cuh
+
+.PHONY: all clean run hazel reginfo paper run_paper bench run_bench
 
 all: $(TARGET)
 
+paper: $(PAPER_TARGET)
+
+$(PAPER_TARGET): $(PAPER_SRCS)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) $(PAPER_SRCS) -o $(PAPER_TARGET)
+
+run_paper: $(PAPER_TARGET)
+	./$(PAPER_TARGET)
+
+bench: $(BENCH_TARGET)
+
+$(BENCH_TARGET): $(BENCH_SRCS) $(BENCH_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) $(BENCH_SRCS) $(LIBS) -o $(BENCH_TARGET)
+
+run_bench: $(BENCH_TARGET)
+	./$(BENCH_TARGET)
+
 $(TARGET): $(SRCS) $(HEADERS)
-	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(SRCS) $(LIBS) -o $(TARGET)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) $(SRCS) $(LIBS) -o $(TARGET)
 
 hazel: $(SRCS) $(HEADERS)
-	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(SRCS) $(LIBS) $(HAZEL_INCLUDES) -o $(TARGET)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) $(SRCS) $(LIBS) $(HAZEL_INCLUDES) -o $(TARGET)
+
+# Show register usage per kernel (useful for tuning)
+reginfo: $(SRCS) $(HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) --ptxas-options=-v $(SRCS) $(LIBS) -o $(TARGET) 2>&1 | grep -E "registers|smem"
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(PAPER_TARGET) $(BENCH_TARGET)
