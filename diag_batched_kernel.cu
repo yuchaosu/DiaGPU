@@ -59,7 +59,7 @@ bat_upper_bound(const int* __restrict__ arr, int n, int val)
  *   #pragma unroll ensures acc[k] stays in registers.
  * ============================================================ */
 __global__ void
-__launch_bounds__(128, 8)
+__launch_bounds__(128, 2)
 diag_spmm_batched_kernel(BatchedArgs args)
 {
     const int lane_id = threadIdx.x % WARP_SIZE;
@@ -198,7 +198,7 @@ void launch_batched_kernel(BatchedArgs args, cudaStream_t stream)
     const int block_size = 128;          /* 4 warps per CTA */
     const int warps_per_cta = block_size / WARP_SIZE;
     int sm = bat_get_sm_count();
-    int grid_size = sm * 8;              /* target 8 CTAs per SM */
+    int grid_size = sm * 2;              /* 2 CTAs per SM: keeps A in L1 */
 
     int min_ctas = (args.total_items + warps_per_cta - 1) / warps_per_cta;
     if (grid_size > min_ctas) grid_size = min_ctas;

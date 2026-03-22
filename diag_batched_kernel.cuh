@@ -18,9 +18,11 @@
 #include <cuda_runtime.h>
 
 /* Batch size — number of output diagonals per warp.
- * K=32: 32 register accumulators + ~30 other = ~62 regs/thread.
- * Sweet spot for H100 occupancy and A amortization. */
-constexpr int BATCH_K = 32;
+ * K=64: 64 register accumulators + ~30 other = ~94 regs/thread.
+ * Fewer batches = fewer A reload passes.
+ * With __launch_bounds__(128, 2): 2 CTAs/SM = 8 warps,
+ * A data fits in L1 (8 × 25 KB = 200 KB < 256 KB). */
+constexpr int BATCH_K = 64;
 
 /* ============================================================
  * BatchedArgs — everything the batched kernel needs.
