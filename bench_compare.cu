@@ -398,7 +398,11 @@ bench_rowtiled(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
     size_t c_bytes = total_c * sizeof(float);
     CUDA_CHECK(cudaMalloc(&d_C, c_bytes));
 
-    /* Build args. chunk_d = B_num_diags for best A amortization. */
+    /* Build B diagonal lookup for the kernel. */
+    std::vector<int> b_lookup_rt = build_b_diag_lookup(B, n);
+    int* d_B_lookup = up_i(b_lookup_rt);
+
+    /* Build args. */
     RowTiledArgs rta = {};
     rta.n = n;
     rta.A_values = d_A_vals; rta.A_offsets = d_A_off;
@@ -410,7 +414,7 @@ bench_rowtiled(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
     rta.C_values = d_C; rta.C_val_starts = d_c_vs; rta.C_diag_lens = d_c_dl;
     rta.d_c_min = d_c_min; rta.d_c_max = d_c_max;
     rta.num_out_diags = num_out_diags;
-    rta.chunk_d = B.num_diags;  /* full B width per chunk */
+    rta.B_diag_lookup = d_B_lookup;
 
     const int block_size = 128;
 
@@ -455,7 +459,7 @@ bench_rowtiled(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
     CUDA_CHECK(cudaEventDestroy(stop));
     cudaFree(d_A_vals); cudaFree(d_A_off); cudaFree(d_A_starts); cudaFree(d_A_lens);
     cudaFree(d_B_vals); cudaFree(d_B_off); cudaFree(d_B_starts); cudaFree(d_B_lens);
-    cudaFree(d_c_vs); cudaFree(d_c_dl); cudaFree(d_C);
+    cudaFree(d_B_lookup); cudaFree(d_c_vs); cudaFree(d_c_dl); cudaFree(d_C);
 
     return res;
 }

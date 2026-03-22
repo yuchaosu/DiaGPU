@@ -12,19 +12,18 @@
  *
  * DESIGN:
  *   Each CTA owns R consecutive rows (R = blockDim.x).
- *   Output diagonals are processed in chunks of D.
- *   For each chunk:
- *     1. Zero smem accumulators: float acc[D][R]
- *     2. For each A diagonal d_a:
- *          load a_val (register, coalesced, REUSED across B iters)
- *          For each B diagonal d_b producing d_c in this chunk:
- *            load b_val (coalesced)
- *            smem[d_c - chunk_lo][tid] += a_val * b_val
- *     3. Write back: direct store to C diagonal format
+ *   Phase 1: Pre-load ALL A values into shared memory (read-only).
+ *   Phase 2: Iterate output diags with sliding window:
+ *     For each d_c:
+ *       acc (register) += smemA[ai][tid] * B_values[...]
+ *       Write acc to C (direct, zero atomics)
+ *
+ *   smem is READ-ONLY (A cache, ~5 cyc/read).
+ *   Accumulation is in REGISTERS (~1 cyc/FMA).
+ *   A loaded once into smem, reused across all output diagonals.
+ *   Sliding window: zero binary search (O(1) amortized per d_c).
  *
  * Requires: A_offsets and B_offsets sorted ascending.
- *           Symmetric offsets (A.offsets == B.offsets) for best
- *           performance, but works for any sorted offsets.
  * ============================================================ */
 #pragma once
 
@@ -53,6 +52,9 @@ struct RowTiledArgs {
     const int*   B_lengths;
     int          B_num_diags;
 
+    /* B diagonal lookup: B_diag_lookup[d_b + (n-1)] = bi or -1 */
+    const int*   B_diag_lookup;
+
     /* Output C — diagonal format.
      * C_val_starts[d_c + (n-1)] = starting offset in C_values
      *   for output diagonal d_c, or -1 if not present.
@@ -65,15 +67,12 @@ struct RowTiledArgs {
     int          d_c_min;        /* smallest output diagonal offset */
     int          d_c_max;        /* largest output diagonal offset */
     int          num_out_diags;  /* = d_c_max - d_c_min + 1 */
-
-    /* Chunk size for shared memory tiling (= B_num_diags typically) */
-    int          chunk_d;
 };
 
 /* ============================================================
  * Kernel declaration
  *
- * Dynamic shared memory: chunk_d * blockDim.x * sizeof(float)
+ * Dynamic shared memory: A_num_diags * blockDim.x * sizeof(float)
  * ============================================================ */
 __global__ void
 diag_spmm_rowtiled_kernel(RowTiledArgs args);
