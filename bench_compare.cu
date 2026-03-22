@@ -24,6 +24,7 @@
 #include "diag_host_preprocess.cuh"
 #include "diag_kernel.cuh"
 #include "diag_rowtiled_kernel.cuh"
+#include "diag_batched_kernel.cuh"
 #include "paper_hm.cuh"
 
 #include <cusparse.h>
@@ -465,6 +466,134 @@ bench_rowtiled(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
 }
 
 /* ============================================================
+ *   BENCHMARK 1c: Batched DiagSpMM (K output diags per warp)
+ * ============================================================ */
+static BenchResult
+bench_batched(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
+{
+    BenchResult res;
+
+    DiagMatrix A = A_in, B = B_in;
+    sort_diag_matrix_by_offset(A);
+    sort_diag_matrix_by_offset(B);
+
+    int a_min = A.offsets.front(), a_max = A.offsets.back();
+    int b_min = B.offsets.front(), b_max = B.offsets.back();
+    int d_c_min = std::max(a_min + b_min, -(n - 1));
+    int d_c_max = std::min(a_max + b_max,  (n - 1));
+    int num_out_diags = d_c_max - d_c_min + 1;
+
+    /* Build C diagonal layout. */
+    std::vector<int> c_val_starts(2 * n - 1, -1);
+    std::vector<int> c_diag_lens(2 * n - 1, 0);
+    std::vector<int> b_lookup = build_b_diag_lookup(B, n);
+    int total_c = 0;
+    for (int dc = d_c_min; dc <= d_c_max; ++dc) {
+        int len = DiagMatrix::diag_length(n, n, dc);
+        if (len <= 0) continue;
+        /* Check reachability. */
+        bool reach = false;
+        for (int ai = 0; ai < A.num_diags && !reach; ++ai) {
+            int db = dc - A.offsets[ai];
+            if (db >= -(n-1) && db <= (n-1) && b_lookup[db + n - 1] >= 0)
+                reach = true;
+        }
+        if (!reach) continue;
+        c_val_starts[dc + (n - 1)] = total_c;
+        c_diag_lens[dc + (n - 1)]  = len;
+        total_c += len;
+    }
+
+    /* Upload. */
+    auto up_f = [](const std::vector<float>& v) -> float* {
+        float* d = nullptr;
+        if (!v.empty()) { cudaMalloc(&d, v.size()*sizeof(float)); cudaMemcpy(d, v.data(), v.size()*sizeof(float), cudaMemcpyHostToDevice); }
+        return d;
+    };
+    auto up_i = [](const std::vector<int>& v) -> int* {
+        int* d = nullptr;
+        if (!v.empty()) { cudaMalloc(&d, v.size()*sizeof(int)); cudaMemcpy(d, v.data(), v.size()*sizeof(int), cudaMemcpyHostToDevice); }
+        return d;
+    };
+
+    float* d_A_v  = up_f(A.values);
+    int*   d_A_o  = up_i(A.offsets);
+    int*   d_A_s  = up_i(A.diag_starts);
+    int*   d_A_l  = up_i(A.diag_lengths);
+    float* d_B_v  = up_f(B.values);
+    int*   d_B_s  = up_i(B.diag_starts);
+    int*   d_B_l  = up_i(B.diag_lengths);
+    int*   d_Blk  = up_i(b_lookup);
+    int*   d_cvs  = up_i(c_val_starts);
+    int*   d_cdl  = up_i(c_diag_lens);
+    float* d_C    = nullptr;
+    size_t c_bytes = total_c * sizeof(float);
+    CUDA_CHECK(cudaMalloc(&d_C, c_bytes));
+
+    int num_d_c_batches = (num_out_diags + BATCH_K - 1) / BATCH_K;
+    int num_pos_tiles   = (n + WARP_SIZE - 1) / WARP_SIZE;
+
+    BatchedArgs ba = {};
+    ba.n = n;
+    ba.A_values = d_A_v; ba.A_offsets = d_A_o;
+    ba.A_starts = d_A_s; ba.A_lengths = d_A_l;
+    ba.A_num_diags = A.num_diags;
+    ba.B_values = d_B_v; ba.B_starts = d_B_s; ba.B_lengths = d_B_l;
+    ba.B_num_diags = B.num_diags;
+    ba.B_diag_lookup = d_Blk;
+    ba.B_offset_min = b_min; ba.B_offset_max = b_max;
+    ba.C_values = d_C; ba.C_val_starts = d_cvs; ba.C_diag_lens = d_cdl;
+    ba.d_c_min = d_c_min; ba.d_c_max = d_c_max;
+    ba.num_d_c_batches = num_d_c_batches;
+    ba.num_pos_tiles = num_pos_tiles;
+    ba.total_items = num_d_c_batches * num_pos_tiles;
+
+    /* Warmup */
+    CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
+    launch_batched_kernel(ba);
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    /* Timed runs */
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int iter = 0; iter < NUM_ITERS; ++iter) {
+        CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
+        launch_batched_kernel(ba);
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    float total_ms = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&total_ms, start, stop));
+    res.gpu_ms = total_ms / NUM_ITERS;
+
+    /* Download and convert to dense */
+    std::vector<float> h_C(total_c);
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, c_bytes, cudaMemcpyDeviceToHost));
+
+    res.C_dense.assign(n * n, 0.0f);
+    for (int dc = d_c_min; dc <= d_c_max; ++dc) {
+        int idx = dc + (n - 1);
+        int c_start = c_val_starts[idx];
+        int c_len   = c_diag_lens[idx];
+        if (c_start < 0) continue;
+        int c_sr = (dc >= 0) ? 0 : -dc;
+        int c_sc = (dc >= 0) ? dc : 0;
+        for (int p = 0; p < c_len; ++p)
+            res.C_dense[(c_sr + p) * n + (c_sc + p)] = h_C[c_start + p];
+    }
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    cudaFree(d_A_v); cudaFree(d_A_o); cudaFree(d_A_s); cudaFree(d_A_l);
+    cudaFree(d_B_v); cudaFree(d_B_s); cudaFree(d_B_l); cudaFree(d_Blk);
+    cudaFree(d_cvs); cudaFree(d_cdl); cudaFree(d_C);
+
+    return res;
+}
+
+/* ============================================================
  *        BENCHMARK 2: Paper Algorithm 2 (HM + atomics)
  * ============================================================ */
 static BenchResult
@@ -851,20 +980,17 @@ run_test(const TestCase& tc, float tol)
         cpu_diag_multiply(A, B, n, C_ref);
 
     /* Run benchmarks */
-    BenchResult r_diag = bench_diagspmm(A, B, n);
-    BenchResult r_rt   = bench_rowtiled(A, B, n);
+    BenchResult r_bat  = bench_batched(A, B, n);
     BenchResult r_hm   = bench_paper_hm(A, B, n);
     BenchResult r_csp  = bench_cusparse(A, B, n);
 
     /* Verify if CPU reference available */
     if (n <= MAX_VERIFY_N) {
-        r_diag.pass = verify_result(r_diag.C_dense.data(), C_ref.data(), n, tol);
-        r_rt.pass   = verify_result(r_rt.C_dense.data(),   C_ref.data(), n, tol);
+        r_bat.pass  = verify_result(r_bat.C_dense.data(),  C_ref.data(), n, tol);
         r_hm.pass   = verify_result(r_hm.C_dense.data(),   C_ref.data(), n, tol);
         r_csp.pass  = verify_result(r_csp.C_dense.data(),  C_ref.data(), n, tol);
     } else {
-        r_diag.pass = true;
-        r_rt.pass   = true;
+        r_bat.pass  = true;
         r_hm.pass   = true;
         r_csp.pass  = true;
     }
@@ -874,20 +1000,20 @@ run_test(const TestCase& tc, float tol)
         return (n <= MAX_VERIFY_N) ? (r.pass ? "PASS" : "FAIL") : "n/a";
     };
 
-    printf("  %-6d  %-6d  %-7d  %10.4f  %10.4f  %10.4f  %10.4f  %-4s %-4s %-4s %-4s\n",
+    printf("  %-6d  %-6d  %-7d  %10.4f  %10.4f  %10.4f  %-4s %-4s %-4s\n",
            n, nd, nnzA,
-           r_diag.gpu_ms, r_rt.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms,
-           ps(r_diag), ps(r_rt), ps(r_hm), ps(r_csp));
+           r_bat.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms,
+           ps(r_bat), ps(r_hm), ps(r_csp));
 }
 
 static void
 print_table_header()
 {
-    printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s  %10s  %-4s %-4s %-4s %-4s\n",
-           "n", "diags", "nnzA", "DiagSpMM", "RowTiled", "Paper-HM", "cuSPARSE",
-           "DSP", "RT", "PHM", "cuSP");
-    printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s  %10s\n",
-           "", "", "", "(ms)", "(ms)", "(ms)", "(ms)");
+    printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s  %-4s %-4s %-4s\n",
+           "n", "diags", "nnzA", "Batched", "Paper-HM", "cuSPARSE",
+           "BAT", "PHM", "cuSP");
+    printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s\n",
+           "", "", "", "(ms)", "(ms)", "(ms)");
     printf("  ");
     for (int i = 0; i < 100; ++i) printf("-");
     printf("\n");
