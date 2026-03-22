@@ -5,7 +5,7 @@
 NVCC       = nvcc
 NVCC_FLAGS = -std=c++17 -O2
 # Adjust -arch to match your GPU (e.g., sm_80, sm_86, sm_90, sm_120)
-ARCH       = -arch=sm_86
+ARCH       = -arch=sm_90
 # NVTX3 is header-only in CUDA >=12; older toolkits need -lnvToolsExt
 LIBS       = -lcusparse
 HAZEL_INCLUDES = -I ../../conda/conda_envs/cudadev/nsight-compute-2024.3.2/host/target-linux-x64/nvtx/include

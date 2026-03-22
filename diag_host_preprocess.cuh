@@ -230,6 +230,10 @@ build_all(const DiagMatrix& A, const DiagMatrix& B,
             else if (work <= MEDIUM_WORK_MAX) bucket = 1;
             else                              bucket = 2;
 
+            /* Clamp: bucket must have enough threads for tile_size. */
+            if (tile_size > TILE_SIZE       && bucket < 2) bucket = 2;
+            if (tile_size > TILE_SIZE_HEAVY && bucket < 3) bucket = 3;
+
             Task t;
             t.c_diag_idx  = c_idx;
             t.c_offset    = d_c;
@@ -306,6 +310,14 @@ build_all_adaptive(const DiagMatrix& A, const DiagMatrix& B,
             } else {
                 bucket = 2;
             }
+
+            /* Clamp: bucket must have enough threads for tile_size.
+             *   LIGHT  (bucket 0): up to TILE_SIZE_LIGHT  (32)
+             *   MEDIUM (bucket 1): up to TILE_SIZE         (128)
+             *   HEAVY  (bucket 2): up to TILE_SIZE_HEAVY   (256)
+             *   WIDE   (bucket 3): up to WIDE_TILE_SIZE    (512)  */
+            if (chosen_tile > TILE_SIZE       && bucket < 2) bucket = 2;
+            if (chosen_tile > TILE_SIZE_HEAVY && bucket < 3) bucket = 3;
 
             Task t;
             t.c_diag_idx  = c_idx;

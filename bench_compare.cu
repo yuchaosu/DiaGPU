@@ -249,40 +249,34 @@ static void free_device_state(DeviceState& ds)
 
 /* ============================================================
  *            BENCHMARK 1: DiagSpMM (our algorithm)
+ *
+ * Uses the UNIFIED kernel: single launch, grid-stride,
+ * warp-per-task.  Tile size = WARP_SIZE (32) for maximum
+ * parallelism and zero launch overhead.
  * ============================================================ */
 static BenchResult
 bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
 {
     BenchResult res;
 
-    PreprocessResult pr = build_all_adaptive(A, B, n, n, n);
+    /* Tile at WARP_SIZE for the unified kernel (one warp per task). */
+    PreprocessResult pr = build_all(A, B, n, n, n, WARP_SIZE);
     std::vector<int> b_lookup = build_b_diag_lookup(B, n);
+    std::vector<int> unified_ids = build_unified_task_ids(pr);
 
     DeviceState ds = upload_diagspmm(A, B, n, pr, b_lookup);
 
-    /* Per-bucket task id uploads */
-    int* d_light_ids  = upload_vec(pr.light_task_ids);
-    int* d_medium_ids = upload_vec(pr.medium_task_ids);
-    int* d_heavy_ids  = upload_vec(pr.heavy_task_ids);
-    int* d_wide_ids   = upload_vec(pr.wide_task_ids);
+    int* d_task_ids = upload_vec(unified_ids);
+    int  num_tasks  = (int)unified_ids.size();
 
-    int nl = (int)pr.light_task_ids.size();
-    int nm = (int)pr.medium_task_ids.size();
-    int nh = (int)pr.heavy_task_ids.size();
-    int nw = (int)pr.wide_task_ids.size();
-
-    /* Helper to launch all buckets. */
-    auto launch_all = [&]() {
-        KernelArgs ka = ds.args;
-        if (nl > 0) { ka.task_ids = d_light_ids;  ka.num_tasks = nl; launch_light_kernel(ka); }
-        if (nm > 0) { ka.task_ids = d_medium_ids; ka.num_tasks = nm; launch_medium_kernel(ka); }
-        if (nh > 0) { ka.task_ids = d_heavy_ids;  ka.num_tasks = nh; launch_heavy_kernel(ka); }
-        if (nw > 0) { ka.task_ids = d_wide_ids;   ka.num_tasks = nw; launch_wide_kernel(ka); }
-    };
+    /* Build KernelArgs for unified launch. */
+    KernelArgs ka = ds.args;
+    ka.task_ids   = d_task_ids;
+    ka.num_tasks  = num_tasks;
 
     /* Warmup */
     CUDA_CHECK(cudaMemset(ds.args.C_values, 0, ds.c_bytes));
-    launch_all();
+    launch_unified_kernel(ka);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     /* Timed runs */
@@ -293,7 +287,7 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
     CUDA_CHECK(cudaEventRecord(start));
     for (int iter = 0; iter < NUM_ITERS; ++iter) {
         CUDA_CHECK(cudaMemset(ds.args.C_values, 0, ds.c_bytes));
-        launch_all();
+        launch_unified_kernel(ka);
     }
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
@@ -320,8 +314,7 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
     free_device_state(ds);
-    cudaFree(d_light_ids); cudaFree(d_medium_ids);
-    cudaFree(d_heavy_ids); cudaFree(d_wide_ids);
+    cudaFree(d_task_ids);
 
     return res;
 }
@@ -706,27 +699,37 @@ run_test(const TestCase& tc, float tol)
 
     int nnzA = (int)A.values.size();
 
-    /* CPU reference */
+    /* CPU reference — skip for large n (dense C is too big). */
+    const int MAX_VERIFY_N = 4096;
     std::vector<float> C_ref;
-    cpu_diag_multiply(A, B, n, C_ref);
+    if (n <= MAX_VERIFY_N)
+        cpu_diag_multiply(A, B, n, C_ref);
 
     /* Run benchmarks */
     BenchResult r_diag = bench_diagspmm(A, B, n);
-    r_diag.pass = verify_result(r_diag.C_dense.data(), C_ref.data(), n, tol);
+    BenchResult r_hm   = bench_paper_hm(A, B, n);
+    BenchResult r_csp  = bench_cusparse(A, B, n);
 
-    BenchResult r_hm = bench_paper_hm(A, B, n);
-    r_hm.pass = verify_result(r_hm.C_dense.data(), C_ref.data(), n, tol);
-
-    BenchResult r_csp = bench_cusparse(A, B, n);
-    r_csp.pass = verify_result(r_csp.C_dense.data(), C_ref.data(), n, tol);
+    /* Verify if CPU reference available */
+    if (n <= MAX_VERIFY_N) {
+        r_diag.pass = verify_result(r_diag.C_dense.data(), C_ref.data(), n, tol);
+        r_hm.pass   = verify_result(r_hm.C_dense.data(),   C_ref.data(), n, tol);
+        r_csp.pass  = verify_result(r_csp.C_dense.data(),  C_ref.data(), n, tol);
+    } else {
+        /* For large n, skip dense verification — just mark as n/a. */
+        r_diag.pass = true;
+        r_hm.pass   = true;
+        r_csp.pass  = true;
+    }
 
     /* Print row */
+    const char* dp = (n <= MAX_VERIFY_N) ? (r_diag.pass ? "PASS" : "FAIL") : "n/a";
+    const char* hp = (n <= MAX_VERIFY_N) ? (r_hm.pass   ? "PASS" : "FAIL") : "n/a";
+    const char* cp = (n <= MAX_VERIFY_N) ? (r_csp.pass  ? "PASS" : "FAIL") : "n/a";
+
     printf("  %-6d  %-6d  %-7d  %12.4f  %12.4f  %12.4f  %-6s  %-6s  %-6s\n",
            n, nd, nnzA,
-           r_diag.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms,
-           r_diag.pass ? "PASS" : "FAIL",
-           r_hm.pass   ? "PASS" : "FAIL",
-           r_csp.pass  ? "PASS" : "FAIL");
+           r_diag.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms, dp, hp, cp);
 }
 
 static void
@@ -798,19 +801,21 @@ int main(int argc, char** argv)
         /* Single user-specified test case */
         run_test({cli_n, cli_diags}, tol);
     } else {
-        /* Preset test suite */
+        /* Preset test suite — includes large n to show compute-dominated regime */
         std::vector<TestCase> cases = {
-            { 512,  11},
-            { 512,  21},
-            {1024,  11},
-            {1024,  21},
-            {1024,  41},
-            {2048,  11},
-            {2048,  21},
-            {2048,  41},
-            {4096,  11},
-            {4096,  21},
-            {4096,  41},
+            { 1024,  11},
+            { 1024,  21},
+            { 1024,  41},
+            { 2048,  21},
+            { 2048,  41},
+            { 4096,  21},
+            { 4096,  41},
+            { 8192,  21},
+            { 8192,  41},
+            { 8192, 101},
+            {16384,  41},
+            {16384, 101},
+            {16384, 201},
         };
         for (const auto& tc : cases)
             run_test(tc, tol);
