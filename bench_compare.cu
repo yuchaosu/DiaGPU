@@ -25,6 +25,7 @@
 #include "diag_kernel.cuh"
 #include "diag_rowtiled_kernel.cuh"
 #include "diag_batched_kernel.cuh"
+#include "hm_optimized_kernel.cuh"
 #include "paper_hm.cuh"
 
 #include <cusparse.h>
@@ -594,6 +595,159 @@ bench_batched(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
 }
 
 /* ============================================================
+ *        BENCHMARK: HM Optimized (smem metadata, no bsearch)
+ * ============================================================ */
+static BenchResult
+bench_hm_opt(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
+{
+    BenchResult res;
+
+    DiagMatrix A = A_in, B = B_in;
+    sort_diag_matrix_by_offset(A);
+    sort_diag_matrix_by_offset(B);
+
+    /* Build C diagonal layout for c_base precomputation. */
+    std::vector<int> b_lookup = build_b_diag_lookup(B, n);
+
+    /* Compute output diagonal value starts. */
+    int a_min = A.offsets.front(), a_max = A.offsets.back();
+    int b_min = B.offsets.front(), b_max = B.offsets.back();
+    std::vector<int> c_val_starts(2 * n - 1, -1);
+    int total_c = 0;
+    for (int dc = a_min + b_min; dc <= a_max + b_max; ++dc) {
+        if (dc < -(n-1) || dc > (n-1)) continue;
+        int len = DiagMatrix::diag_length(n, n, dc);
+        if (len <= 0) continue;
+        /* Check reachability */
+        bool reach = false;
+        for (int ai = 0; ai < A.num_diags && !reach; ++ai) {
+            int db = dc - A.offsets[ai];
+            if (db >= -(n-1) && db <= (n-1) && b_lookup[db + n - 1] >= 0)
+                reach = true;
+        }
+        if (!reach) continue;
+        c_val_starts[dc + (n - 1)] = total_c;
+        total_c += len;
+    }
+
+    /* Precompute per-B-diagonal metadata. */
+    std::vector<int> h_b_sr(B.num_diags);
+    std::vector<int> h_b_start(B.num_diags);
+    std::vector<int> h_b_len(B.num_diags);
+    for (int bi = 0; bi < B.num_diags; ++bi) {
+        int d_b = B.offsets[bi];
+        h_b_sr[bi]    = (d_b >= 0) ? 0 : -d_b;
+        h_b_start[bi] = B.diag_starts[bi];
+        h_b_len[bi]   = B.diag_lengths[bi];
+    }
+
+    /* Precompute c_base[ai * B_num_diags + bi]:
+     * For each (A diag, B diag) pair, the C write base address:
+     *   c_base = C_val_starts[d_c + n-1] - c_sr(d_c)
+     *   Final write: C_values[c_base + row]
+     * Set to -1 if output diagonal doesn't exist.          */
+    std::vector<int> h_c_base(A.num_diags * B.num_diags, -1);
+    for (int ai = 0; ai < A.num_diags; ++ai) {
+        for (int bi = 0; bi < B.num_diags; ++bi) {
+            int d_c = A.offsets[ai] + B.offsets[bi];
+            if (d_c < -(n-1) || d_c > (n-1)) continue;
+            int idx = d_c + (n - 1);
+            if (c_val_starts[idx] < 0) continue;
+            int c_sr = (d_c >= 0) ? 0 : -d_c;
+            h_c_base[ai * B.num_diags + bi] = c_val_starts[idx] - c_sr;
+        }
+    }
+
+    /* Upload. */
+    auto up_f = [](const std::vector<float>& v) -> float* {
+        float* d = nullptr;
+        if (!v.empty()) { cudaMalloc(&d, v.size()*sizeof(float)); cudaMemcpy(d, v.data(), v.size()*sizeof(float), cudaMemcpyHostToDevice); }
+        return d;
+    };
+    auto up_i = [](const std::vector<int>& v) -> int* {
+        int* d = nullptr;
+        if (!v.empty()) { cudaMalloc(&d, v.size()*sizeof(int)); cudaMemcpy(d, v.data(), v.size()*sizeof(int), cudaMemcpyHostToDevice); }
+        return d;
+    };
+
+    float* d_A_v = up_f(A.values);
+    int*   d_A_o = up_i(A.offsets);
+    int*   d_A_s = up_i(A.diag_starts);
+    int*   d_A_l = up_i(A.diag_lengths);
+    float* d_B_v = up_f(B.values);
+    int*   d_bsr = up_i(h_b_sr);
+    int*   d_bst = up_i(h_b_start);
+    int*   d_bln = up_i(h_b_len);
+    int*   d_cb  = up_i(h_c_base);
+    float* d_C   = nullptr;
+    size_t c_bytes = total_c * sizeof(float);
+    CUDA_CHECK(cudaMalloc(&d_C, c_bytes));
+
+    /* Also need A_lengths on device for host-side launch loop. */
+    std::vector<int> h_A_lengths(A.diag_lengths.begin(), A.diag_lengths.end());
+
+    HMOptArgs oa = {};
+    oa.n = n;
+    oa.A_values = d_A_v; oa.A_offsets = d_A_o;
+    oa.A_starts = d_A_s; oa.A_lengths = d_A_l;
+    oa.A_num_diags = A.num_diags;
+    oa.B_values = d_B_v;
+    oa.B_starts = d_bst; oa.B_lengths = d_bln;
+    oa.B_num_diags = B.num_diags;
+    oa.b_sr = d_bsr; oa.b_start = d_bst; oa.b_len = d_bln;
+    oa.c_base = d_cb;
+    oa.C_values = d_C;
+
+    /* Copy A_lengths to host for the launch loop. */
+    /* (Already in h_A_lengths.) */
+
+    /* Warmup */
+    CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
+    launch_hm_optimized(oa);
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    /* Timed runs */
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int iter = 0; iter < NUM_ITERS; ++iter) {
+        CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
+        launch_hm_optimized(oa);
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    float total_ms = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&total_ms, start, stop));
+    res.gpu_ms = total_ms / NUM_ITERS;
+
+    /* Download and convert to dense. */
+    std::vector<float> h_C(total_c);
+    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, c_bytes, cudaMemcpyDeviceToHost));
+
+    res.C_dense.assign(n * n, 0.0f);
+    for (int dc = a_min + b_min; dc <= a_max + b_max; ++dc) {
+        if (dc < -(n-1) || dc > (n-1)) continue;
+        int idx = dc + (n - 1);
+        int c_start = c_val_starts[idx];
+        if (c_start < 0) continue;
+        int c_len = DiagMatrix::diag_length(n, n, dc);
+        int c_sr = (dc >= 0) ? 0 : -dc;
+        int c_sc = (dc >= 0) ? dc : 0;
+        for (int p = 0; p < c_len; ++p)
+            res.C_dense[(c_sr + p) * n + (c_sc + p)] = h_C[c_start + p];
+    }
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    cudaFree(d_A_v); cudaFree(d_A_o); cudaFree(d_A_s); cudaFree(d_A_l);
+    cudaFree(d_B_v); cudaFree(d_bsr); cudaFree(d_bst); cudaFree(d_bln);
+    cudaFree(d_cb); cudaFree(d_C);
+
+    return res;
+}
+
+/* ============================================================
  *        BENCHMARK 2: Paper Algorithm 2 (HM + atomics)
  * ============================================================ */
 static BenchResult
@@ -980,17 +1134,17 @@ run_test(const TestCase& tc, float tol)
         cpu_diag_multiply(A, B, n, C_ref);
 
     /* Run benchmarks */
-    BenchResult r_bat  = bench_batched(A, B, n);
+    BenchResult r_opt  = bench_hm_opt(A, B, n);
     BenchResult r_hm   = bench_paper_hm(A, B, n);
     BenchResult r_csp  = bench_cusparse(A, B, n);
 
     /* Verify if CPU reference available */
     if (n <= MAX_VERIFY_N) {
-        r_bat.pass  = verify_result(r_bat.C_dense.data(),  C_ref.data(), n, tol);
+        r_opt.pass  = verify_result(r_opt.C_dense.data(),  C_ref.data(), n, tol);
         r_hm.pass   = verify_result(r_hm.C_dense.data(),   C_ref.data(), n, tol);
         r_csp.pass  = verify_result(r_csp.C_dense.data(),  C_ref.data(), n, tol);
     } else {
-        r_bat.pass  = true;
+        r_opt.pass  = true;
         r_hm.pass   = true;
         r_csp.pass  = true;
     }
@@ -1002,16 +1156,16 @@ run_test(const TestCase& tc, float tol)
 
     printf("  %-6d  %-6d  %-7d  %10.4f  %10.4f  %10.4f  %-4s %-4s %-4s\n",
            n, nd, nnzA,
-           r_bat.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms,
-           ps(r_bat), ps(r_hm), ps(r_csp));
+           r_opt.gpu_ms, r_hm.gpu_ms, r_csp.gpu_ms,
+           ps(r_opt), ps(r_hm), ps(r_csp));
 }
 
 static void
 print_table_header()
 {
     printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s  %-4s %-4s %-4s\n",
-           "n", "diags", "nnzA", "Batched", "Paper-HM", "cuSPARSE",
-           "BAT", "PHM", "cuSP");
+           "n", "diags", "nnzA", "HM-Opt", "Paper-HM", "cuSPARSE",
+           "OPT", "PHM", "cuSP");
     printf("  %-6s  %-6s  %-7s  %10s  %10s  %10s\n",
            "", "", "", "(ms)", "(ms)", "(ms)");
     printf("  ");

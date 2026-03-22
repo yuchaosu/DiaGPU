@@ -59,7 +59,7 @@ bat_upper_bound(const int* __restrict__ arr, int n, int val)
  *   #pragma unroll ensures acc[k] stays in registers.
  * ============================================================ */
 __global__ void
-__launch_bounds__(128, 2)
+__launch_bounds__(128, 8)
 diag_spmm_batched_kernel(BatchedArgs args)
 {
     const int lane_id = threadIdx.x % WARP_SIZE;
@@ -74,9 +74,16 @@ diag_spmm_batched_kernel(BatchedArgs args)
     const int n_m_1 = n - 1;
 
     for (int item = global_warp; item < args.total_items; item += total_warps) {
-        /* Decode work item → (d_c_batch, pos_tile). */
-        const int batch_idx = item / args.num_pos_tiles;
-        const int tile_idx  = item % args.num_pos_tiles;
+        /* Decode work item → (pos_tile, d_c_batch).
+         * TILE-MAJOR ordering: consecutive warps share the same
+         * row tile but differ in d_c batch.  This means concurrent
+         * warps on the same SM access the SAME A data → L1 reuse.
+         *
+         * With 32 warps/SM and 13 d_c batches (for 201 diags):
+         *   ~2-3 row tiles active per SM → A data ≈ 50-75 KB
+         *   Fits in 256 KB L1 → near-100% A hit rate. */
+        const int tile_idx  = item / args.num_d_c_batches;
+        const int batch_idx = item % args.num_d_c_batches;
 
         const int d_c_base = args.d_c_min + batch_idx * BATCH_K;
         const int p_begin  = tile_idx * WARP_SIZE;
@@ -198,7 +205,7 @@ void launch_batched_kernel(BatchedArgs args, cudaStream_t stream)
     const int block_size = 128;          /* 4 warps per CTA */
     const int warps_per_cta = block_size / WARP_SIZE;
     int sm = bat_get_sm_count();
-    int grid_size = sm * 2;              /* 2 CTAs per SM: keeps A in L1 */
+    int grid_size = sm * 8;              /* 8 CTAs per SM for high occupancy */
 
     int min_ctas = (args.total_items + warps_per_cta - 1) / warps_per_cta;
     if (grid_size > min_ctas) grid_size = min_ctas;

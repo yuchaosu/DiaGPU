@@ -32,8 +32,8 @@ PAPER_SRCS   = paper_algorithms.cu paper_hm_kernel.cu
 
 # Benchmark comparison (DiagSpMM vs Paper-HM vs cuSPARSE)
 BENCH_TARGET = bench_compare
-BENCH_SRCS   = bench_compare.cu paper_hm_kernel.cu diag_kernel.cu diag_rowtiled_kernel.cu diag_batched_kernel.cu
-BENCH_HEADERS = $(HEADERS) paper_hm.cuh diag_rowtiled_kernel.cuh diag_batched_kernel.cuh
+BENCH_SRCS   = bench_compare.cu paper_hm_kernel.cu diag_kernel.cu diag_rowtiled_kernel.cu diag_batched_kernel.cu hm_optimized_kernel.cu
+BENCH_HEADERS = $(HEADERS) paper_hm.cuh diag_rowtiled_kernel.cuh diag_batched_kernel.cuh hm_optimized_kernel.cuh
 
 .PHONY: all clean run hazel reginfo paper run_paper bench run_bench
 
