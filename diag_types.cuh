@@ -141,6 +141,14 @@ struct KernelArgs {
      * Size = 2n-1.  Fits in L1 cache (~8 KB for n=1024). */
     const int*        B_diag_lookup;
     int               n;
+
+    /* B offset range — used to narrow the A-diagonal loop.
+     * For output diagonal d_c, valid d_a is in
+     *   [d_c - B_offset_max, d_c - B_offset_min].
+     * Binary search A_offsets[] (sorted) for this range
+     * to skip non-matching A diags entirely.              */
+    int               B_offset_min;   // min(B.offsets[])
+    int               B_offset_max;   // max(B.offsets[])
 };
 
 /* ============================================================

@@ -542,6 +542,8 @@ int main()
     /* ---- Upload to device ---- */
     nvtx_push("device_upload", NVTX_UPLOAD);
 
+    sort_diag_matrix_by_offset(A);
+    sort_diag_matrix_by_offset(B);
     std::vector<int> b_lookup = build_b_diag_lookup(B, N);
 
     Task*       d_tasks     = upload(pr.tasks);
@@ -587,6 +589,8 @@ int main()
     ka.B_num_diags = B.num_diags;
     ka.B_diag_lookup = d_B_lookup;
     ka.n           = N;
+    ka.B_offset_min = *std::min_element(B.offsets.begin(), B.offsets.end());
+    ka.B_offset_max = *std::max_element(B.offsets.begin(), B.offsets.end());
 
     /* Helper lambda for per-bucket launch */
     auto launch_bucket = [&](int* ids, int count, auto launcher) {

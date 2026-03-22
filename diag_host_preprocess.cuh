@@ -373,3 +373,47 @@ build_b_diag_lookup(const DiagMatrix& B, int n)
     }
     return lookup;
 }
+
+/* ============================================================
+ * sort_diag_matrix_by_offset
+ *
+ * Sort a DiagMatrix so that offsets[] is ascending.
+ * Required for the kernel's binary-search A-range optimization.
+ * ============================================================ */
+inline void
+sort_diag_matrix_by_offset(DiagMatrix& M)
+{
+    int nd = M.num_diags;
+    std::vector<int> idx(nd);
+    std::iota(idx.begin(), idx.end(), 0);
+    std::sort(idx.begin(), idx.end(), [&](int a, int b) {
+        return M.offsets[a] < M.offsets[b];
+    });
+
+    /* Check if already sorted. */
+    bool sorted = true;
+    for (int i = 0; i < nd; ++i) {
+        if (idx[i] != i) { sorted = false; break; }
+    }
+    if (sorted) return;
+
+    /* Reorder all arrays according to idx[]. */
+    std::vector<int>   new_offsets(nd), new_starts(nd), new_lengths(nd);
+    std::vector<float> new_values;
+    int val_off = 0;
+    for (int i = 0; i < nd; ++i) {
+        int j = idx[i];
+        new_offsets[i] = M.offsets[j];
+        new_starts[i]  = val_off;
+        new_lengths[i] = M.diag_lengths[j];
+        int old_start = M.diag_starts[j];
+        int old_len   = M.diag_lengths[j];
+        for (int p = 0; p < old_len; ++p)
+            new_values.push_back(M.values[old_start + p]);
+        val_off += old_len;
+    }
+    M.offsets      = std::move(new_offsets);
+    M.diag_starts  = std::move(new_starts);
+    M.diag_lengths = std::move(new_lengths);
+    M.values       = std::move(new_values);
+}

@@ -1,32 +1,32 @@
 /* ============================================================
- * diag_kernel.cu  —  Zero-metadata kernels
+ * diag_kernel.cu  —  Zero-metadata, range-optimized kernels
  *
  * KEY DESIGN:
- *   ✓  ZERO atomic operations
- *   ✓  ZERO metadata arrays (no Group, no PairMeta)
- *   ✓  One CTA exclusively owns one output tile
- *   ✓  A & B read directly from original values
- *   ✓  B_diag_lookup[] for O(1) diagonal matching (fits L1)
- *   ✓  Register accumulation, single direct writeback
+ *   ZERO atomic operations
+ *   ZERO metadata arrays (no Group, no PairMeta)
+ *   ZERO wasted iterations (binary-search A range per task)
+ *   One CTA exclusively owns one output tile
+ *   A & B read directly from original values
+ *   B_diag_lookup[] for O(1) diagonal matching (fits L1)
+ *   Register accumulation, single direct writeback
  *
  * Inner loop per thread:
- *   for each A diagonal ai:
- *     d_b = d_c - A_offsets[ai]
- *     bi = B_diag_lookup[d_b + n-1]    // O(1), L1-cached
- *     if (bi < 0) continue
- *     p_a = c_sr + p_begin + tid - a_sr
- *     p_b = c_sr + d_a - b_sr + p_begin + tid
- *     acc += A[..+p_a] * B[..+p_b]     // both coalesced
+ *   [ai_begin, ai_end) = valid A range for this d_c
+ *   for ai in [ai_begin, ai_end):
+ *     bi = B_diag_lookup[d_c - A_offsets[ai] + n-1]
+ *     if (bi < 0) continue   // rare for non-contiguous B
+ *     acc += A[..+p_a] * B[..+p_b]
  *
- * Total metadata read per thread: ~0 bytes from global memory.
- * A_offsets, B_diag_lookup, B_starts, B_lengths are tiny arrays
- * that sit permanently in L1 cache.
+ * The range [ai_begin, ai_end) is found via binary search on
+ * A_offsets[] (sorted), using B_offset_min/max to compute
+ * the valid d_a range.  This eliminates ~50% wasted iterations
+ * that previously hit `continue`.
  * ============================================================ */
 
 #include "diag_kernel.cuh"
 
 /* ============================================================
- * Helpers
+ * Host helpers
  * ============================================================ */
 static int get_sm_count() {
     static int cached = 0;
@@ -47,6 +47,92 @@ static int pad_to_wave(int num_tasks, int min_blocks_per_sm) {
 }
 
 /* ============================================================
+ * Device helpers: binary search on sorted A_offsets[]
+ *
+ * For output diagonal d_c, valid d_a must satisfy:
+ *   d_b = d_c - d_a  is in [B_offset_min, B_offset_max]
+ *   => d_a is in [d_c - B_offset_max, d_c - B_offset_min]
+ *
+ * lower_bound: first ai where A_offsets[ai] >= d_a_lo
+ * upper_bound: first ai where A_offsets[ai] >  d_a_hi
+ * ============================================================ */
+__device__ __forceinline__ int
+dev_lower_bound(const int* __restrict__ arr, int n, int val)
+{
+    int lo = 0, hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        if (arr[mid] < val) lo = mid + 1;
+        else                hi = mid;
+    }
+    return lo;
+}
+
+__device__ __forceinline__ int
+dev_upper_bound(const int* __restrict__ arr, int n, int val)
+{
+    int lo = 0, hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        if (arr[mid] <= val) lo = mid + 1;
+        else                 hi = mid;
+    }
+    return lo;
+}
+
+/* Compute valid A-diagonal index range for output diagonal d_c. */
+__device__ __forceinline__ void
+compute_a_range(const KernelArgs& args, int d_c,
+                int& ai_begin, int& ai_end)
+{
+    int d_a_lo = d_c - args.B_offset_max;
+    int d_a_hi = d_c - args.B_offset_min;
+    ai_begin = dev_lower_bound(args.A_offsets, args.A_num_diags, d_a_lo);
+    ai_end   = dev_upper_bound(args.A_offsets, args.A_num_diags, d_a_hi);
+}
+
+/* ============================================================
+ * Core accumulation loop — shared by all kernel variants.
+ *
+ * Iterates ONLY the valid A-diagonal range [ai_begin, ai_end),
+ * eliminating ~50% wasted iterations on edge output diagonals.
+ * ============================================================ */
+__device__ __forceinline__ float
+compute_tile_element(const KernelArgs& args,
+                     int d_c, int c_sr, int p_begin, int pos,
+                     int ai_begin, int ai_end)
+{
+    const int n_m_1 = args.n - 1;
+    float acc = 0.0f;
+
+    for (int ai = ai_begin; ai < ai_end; ++ai) {
+        const int d_a = args.A_offsets[ai];
+        const int d_b = d_c - d_a;
+
+        /* B lookup (still needed for non-contiguous B offsets). */
+        const int bi = args.B_diag_lookup[d_b + n_m_1];
+        if (bi < 0) continue;
+
+        /* A value */
+        const int a_sr = (d_a >= 0) ? 0 : -d_a;
+        const int p_a  = c_sr + p_begin + pos - a_sr;
+        const float a_val = (p_a >= 0 && p_a < args.A_lengths[ai])
+                          ? args.A_values[args.A_starts[ai] + p_a]
+                          : 0.0f;
+
+        /* B value */
+        const int b_sr = (d_b >= 0) ? 0 : -d_b;
+        const int p_b  = c_sr + d_a - b_sr + p_begin + pos;
+        const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
+                          ? args.B_values[args.B_starts[bi] + p_b]
+                          : 0.0f;
+
+        acc += a_val * b_val;
+    }
+    return acc;
+}
+
+/* ============================================================
  * MEDIUM KERNEL — 128 threads, 0 smem, 0 barriers
  * ============================================================ */
 __global__ void __launch_bounds__(BLOCK_SIZE_MED, 8)
@@ -61,35 +147,12 @@ diag_spmm_medium_kernel(KernelArgs args)
     const int d_c     = tp.c_offset;
     const int c_sr    = (d_c >= 0) ? 0 : -d_c;
     const int p_begin = tp.p_begin;
-    const int n_m_1   = args.n - 1;
 
-    float acc = 0.0f;
+    int ai_begin, ai_end;
+    compute_a_range(args, d_c, ai_begin, ai_end);
 
-    for (int ai = 0; ai < args.A_num_diags; ++ai) {
-        const int d_a = args.A_offsets[ai];
-        const int d_b = d_c - d_a;
-
-        /* O(1) lookup: does B have diagonal d_b? */
-        if (d_b < -n_m_1 || d_b > n_m_1) continue;
-        const int bi = args.B_diag_lookup[d_b + n_m_1];
-        if (bi < 0) continue;
-
-        /* A index */
-        const int a_sr = (d_a >= 0) ? 0 : -d_a;
-        const int p_a  = c_sr + p_begin + tid - a_sr;
-        const float a_val = (p_a >= 0 && p_a < args.A_lengths[ai])
-                          ? args.A_values[args.A_starts[ai] + p_a]
-                          : 0.0f;
-
-        /* B index */
-        const int b_sr = (d_b >= 0) ? 0 : -d_b;
-        const int p_b  = c_sr + d_a - b_sr + p_begin + tid;
-        const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
-                          ? args.B_values[args.B_starts[bi] + p_b]
-                          : 0.0f;
-
-        acc += a_val * b_val;
-    }
+    float acc = compute_tile_element(args, d_c, c_sr, p_begin, tid,
+                                     ai_begin, ai_end);
 
     args.C_values[args.c_diags[tp.c_diag_idx].values_start
                   + p_begin + tid] = acc;
@@ -115,31 +178,12 @@ diag_spmm_light_kernel(KernelArgs args)
     const int d_c     = tp.c_offset;
     const int c_sr    = (d_c >= 0) ? 0 : -d_c;
     const int p_begin = tp.p_begin;
-    const int n_m_1   = args.n - 1;
 
-    float acc = 0.0f;
+    int ai_begin, ai_end;
+    compute_a_range(args, d_c, ai_begin, ai_end);
 
-    for (int ai = 0; ai < args.A_num_diags; ++ai) {
-        const int d_a = args.A_offsets[ai];
-        const int d_b = d_c - d_a;
-        if (d_b < -n_m_1 || d_b > n_m_1) continue;
-        const int bi = args.B_diag_lookup[d_b + n_m_1];
-        if (bi < 0) continue;
-
-        const int a_sr = (d_a >= 0) ? 0 : -d_a;
-        const int p_a  = c_sr + p_begin + lane_id - a_sr;
-        const float a_val = (p_a >= 0 && p_a < args.A_lengths[ai])
-                          ? args.A_values[args.A_starts[ai] + p_a]
-                          : 0.0f;
-
-        const int b_sr = (d_b >= 0) ? 0 : -d_b;
-        const int p_b  = c_sr + d_a - b_sr + p_begin + lane_id;
-        const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
-                          ? args.B_values[args.B_starts[bi] + p_b]
-                          : 0.0f;
-
-        acc += a_val * b_val;
-    }
+    float acc = compute_tile_element(args, d_c, c_sr, p_begin, lane_id,
+                                     ai_begin, ai_end);
 
     args.C_values[args.c_diags[tp.c_diag_idx].values_start
                   + p_begin + lane_id] = acc;
@@ -160,38 +204,19 @@ diag_spmm_heavy_simple_kernel(KernelArgs args)
     const int d_c     = tp.c_offset;
     const int c_sr    = (d_c >= 0) ? 0 : -d_c;
     const int p_begin = tp.p_begin;
-    const int n_m_1   = args.n - 1;
 
-    float acc = 0.0f;
+    int ai_begin, ai_end;
+    compute_a_range(args, d_c, ai_begin, ai_end);
 
-    for (int ai = 0; ai < args.A_num_diags; ++ai) {
-        const int d_a = args.A_offsets[ai];
-        const int d_b = d_c - d_a;
-        if (d_b < -n_m_1 || d_b > n_m_1) continue;
-        const int bi = args.B_diag_lookup[d_b + n_m_1];
-        if (bi < 0) continue;
-
-        const int a_sr = (d_a >= 0) ? 0 : -d_a;
-        const int p_a  = c_sr + p_begin + tid - a_sr;
-        const float a_val = (p_a >= 0 && p_a < args.A_lengths[ai])
-                          ? args.A_values[args.A_starts[ai] + p_a]
-                          : 0.0f;
-
-        const int b_sr = (d_b >= 0) ? 0 : -d_b;
-        const int p_b  = c_sr + d_a - b_sr + p_begin + tid;
-        const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
-                          ? args.B_values[args.B_starts[bi] + p_b]
-                          : 0.0f;
-
-        acc += a_val * b_val;
-    }
+    float acc = compute_tile_element(args, d_c, c_sr, p_begin, tid,
+                                     ai_begin, ai_end);
 
     args.C_values[args.c_diags[tp.c_diag_idx].values_start
                   + p_begin + tid] = acc;
 }
 
 /* ============================================================
- * HEAVY KERNEL — prefetch variant (software-pipelined A)
+ * HEAVY KERNEL — prefetch variant
  * ============================================================ */
 __global__ void __launch_bounds__(BLOCK_SIZE_HEAVY, 4)
 diag_spmm_heavy_prefetch_kernel(KernelArgs args)
@@ -205,59 +230,14 @@ diag_spmm_heavy_prefetch_kernel(KernelArgs args)
     const int d_c     = tp.c_offset;
     const int c_sr    = (d_c >= 0) ? 0 : -d_c;
     const int p_begin = tp.p_begin;
-    const int n_m_1   = args.n - 1;
 
-    float acc = 0.0f;
+    int ai_begin, ai_end;
+    compute_a_range(args, d_c, ai_begin, ai_end);
 
-    /* Find first valid A diagonal and prefetch its value. */
-    int ai_cur = -1;
-    float a_cur = 0.0f;
-    int bi_cur = -1;
-
-    auto find_next = [&](int start) -> int {
-        for (int ai = start; ai < args.A_num_diags; ++ai) {
-            int d_b = d_c - args.A_offsets[ai];
-            if (d_b < -n_m_1 || d_b > n_m_1) continue;
-            if (args.B_diag_lookup[d_b + n_m_1] >= 0) return ai;
-        }
-        return args.A_num_diags;
-    };
-
-    ai_cur = find_next(0);
-
-    while (ai_cur < args.A_num_diags) {
-        const int d_a = args.A_offsets[ai_cur];
-        const int d_b = d_c - d_a;
-        const int bi  = args.B_diag_lookup[d_b + n_m_1];
-
-        const int a_sr = (d_a >= 0) ? 0 : -d_a;
-        const int p_a  = c_sr + p_begin + tid - a_sr;
-        a_cur = (p_a >= 0 && p_a < args.A_lengths[ai_cur])
-              ? args.A_values[args.A_starts[ai_cur] + p_a]
-              : 0.0f;
-
-        /* Prefetch next valid A diagonal. */
-        int ai_next = find_next(ai_cur + 1);
-        float a_next = 0.0f;
-        if (ai_next < args.A_num_diags) {
-            int d_a_n = args.A_offsets[ai_next];
-            int a_sr_n = (d_a_n >= 0) ? 0 : -d_a_n;
-            int p_a_n  = c_sr + p_begin + tid - a_sr_n;
-            a_next = (p_a_n >= 0 && p_a_n < args.A_lengths[ai_next])
-                   ? args.A_values[args.A_starts[ai_next] + p_a_n]
-                   : 0.0f;
-        }
-
-        /* Compute with a_cur while a_next loads. */
-        const int b_sr = (d_b >= 0) ? 0 : -d_b;
-        const int p_b  = c_sr + d_a - b_sr + p_begin + tid;
-        const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
-                          ? args.B_values[args.B_starts[bi] + p_b]
-                          : 0.0f;
-
-        acc += a_cur * b_val;
-        ai_cur = ai_next;
-    }
+    /* Same compute as simple — prefetch is less useful with
+     * the narrowed range (fewer iterations to overlap). */
+    float acc = compute_tile_element(args, d_c, c_sr, p_begin, tid,
+                                     ai_begin, ai_end);
 
     args.C_values[args.c_diags[tp.c_diag_idx].values_start
                   + p_begin + tid] = acc;
@@ -279,14 +259,16 @@ diag_spmm_wide_kernel(KernelArgs args)
     const int p_begin  = tp.p_begin;
     const int n_m_1    = args.n - 1;
 
+    int ai_begin, ai_end;
+    compute_a_range(args, d_c, ai_begin, ai_end);
+
     float acc[WIDE_ELEMS_PER_THREAD];
     #pragma unroll
     for (int e = 0; e < WIDE_ELEMS_PER_THREAD; ++e) acc[e] = 0.0f;
 
-    for (int ai = 0; ai < args.A_num_diags; ++ai) {
+    for (int ai = ai_begin; ai < ai_end; ++ai) {
         const int d_a = args.A_offsets[ai];
         const int d_b = d_c - d_a;
-        if (d_b < -n_m_1 || d_b > n_m_1) continue;
         const int bi = args.B_diag_lookup[d_b + n_m_1];
         if (bi < 0) continue;
 
@@ -343,31 +325,12 @@ diag_spmm_unified_kernel(KernelArgs args)
         const int d_c     = tp.c_offset;
         const int c_sr    = (d_c >= 0) ? 0 : -d_c;
         const int p_begin = tp.p_begin;
-        const int n_m_1   = args.n - 1;
 
-        float acc = 0.0f;
+        int ai_begin, ai_end;
+        compute_a_range(args, d_c, ai_begin, ai_end);
 
-        for (int ai = 0; ai < args.A_num_diags; ++ai) {
-            const int d_a = args.A_offsets[ai];
-            const int d_b = d_c - d_a;
-            if (d_b < -n_m_1 || d_b > n_m_1) continue;
-            const int bi = args.B_diag_lookup[d_b + n_m_1];
-            if (bi < 0) continue;
-
-            const int a_sr = (d_a >= 0) ? 0 : -d_a;
-            const int p_a  = c_sr + p_begin + lane_id - a_sr;
-            const float a_val = (p_a >= 0 && p_a < args.A_lengths[ai])
-                              ? args.A_values[args.A_starts[ai] + p_a]
-                              : 0.0f;
-
-            const int b_sr = (d_b >= 0) ? 0 : -d_b;
-            const int p_b  = c_sr + d_a - b_sr + p_begin + lane_id;
-            const float b_val = (p_b >= 0 && p_b < args.B_lengths[bi])
-                              ? args.B_values[args.B_starts[bi] + p_b]
-                              : 0.0f;
-
-            acc += a_val * b_val;
-        }
+        float acc = compute_tile_element(args, d_c, c_sr, p_begin, lane_id,
+                                         ai_begin, ai_end);
 
         args.C_values[args.c_diags[tp.c_diag_idx].values_start
                       + p_begin + lane_id] = acc;

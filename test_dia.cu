@@ -250,6 +250,8 @@ int main()
 
     /* ---- Host preprocessing ---- */
     nvtx_push("host_preprocess", NVTX_PREPROCESS);
+    sort_diag_matrix_by_offset(A);
+    sort_diag_matrix_by_offset(B);
     PreprocessResult pr = build_all_adaptive(A, B, M, K, N);
     std::vector<int> b_lookup = build_b_diag_lookup(B, N);
     NVTX_POP();
@@ -301,6 +303,8 @@ int main()
     ka.B_num_diags = B.num_diags;
     ka.B_diag_lookup = d_B_lookup;
     ka.n           = N;
+    ka.B_offset_min = *std::min_element(B.offsets.begin(), B.offsets.end());
+    ka.B_offset_max = *std::max_element(B.offsets.begin(), B.offsets.end());
 
     /* ---- Kernel launch (per-bucket dispatch) ---- */
     nvtx_push("kernel_all_buckets", NVTX_KERNEL);

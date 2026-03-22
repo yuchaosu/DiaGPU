@@ -255,9 +255,13 @@ static void free_device_state(DeviceState& ds)
  * parallelism and zero launch overhead.
  * ============================================================ */
 static BenchResult
-bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
+bench_diagspmm(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
 {
     BenchResult res;
+
+    /* Sort A by offset (required for kernel binary-search optimization). */
+    DiagMatrix A = A_in, B = B_in;
+    sort_diag_matrix_by_offset(A);
 
     /* Tile at WARP_SIZE for the unified kernel (one warp per task). */
     PreprocessResult pr = build_all(A, B, n, n, n, WARP_SIZE);
@@ -265,6 +269,10 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
     std::vector<int> unified_ids = build_unified_task_ids(pr);
 
     DeviceState ds = upload_diagspmm(A, B, n, pr, b_lookup);
+
+    /* Set B offset range for kernel's A-range narrowing. */
+    ds.args.B_offset_min = *std::min_element(B.offsets.begin(), B.offsets.end());
+    ds.args.B_offset_max = *std::max_element(B.offsets.begin(), B.offsets.end());
 
     int* d_task_ids = upload_vec(unified_ids);
     int  num_tasks  = (int)unified_ids.size();
