@@ -179,6 +179,75 @@ diag_to_dense(const DiagMatrix& M, float* dense)
 }
 
 /* ============================================================
+ * Helper: build KernelArgs and upload all device data.
+ * Returns a KernelArgs struct and a list of device pointers
+ * to free later.
+ * ============================================================ */
+struct DeviceState {
+    KernelArgs args;
+    std::vector<void*> allocs;  /* device pointers to free */
+    size_t c_bytes;
+};
+
+static DeviceState
+upload_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n,
+                const PreprocessResult& pr,
+                const std::vector<int>& b_lookup)
+{
+    DeviceState ds;
+    ds.c_bytes = pr.total_c_values * sizeof(float);
+
+    auto up_f = [&](const std::vector<float>& v) -> float* {
+        float* d = upload_vec(v);
+        ds.allocs.push_back(d);
+        return d;
+    };
+    auto up_i = [&](const std::vector<int>& v) -> int* {
+        int* d = upload_vec(v);
+        ds.allocs.push_back(d);
+        return d;
+    };
+    auto up_t = [&](const std::vector<Task>& v) -> Task* {
+        Task* d = upload_vec(v);
+        ds.allocs.push_back(d);
+        return d;
+    };
+    auto up_od = [&](const std::vector<OutputDiag>& v) -> OutputDiag* {
+        OutputDiag* d = upload_vec(v);
+        ds.allocs.push_back(d);
+        return d;
+    };
+
+    ds.args.tasks       = up_t(pr.tasks);
+    ds.args.c_diags     = up_od(pr.output_diags);
+    ds.args.A_values    = up_f(A.values);
+    ds.args.A_offsets   = up_i(A.offsets);
+    ds.args.A_starts    = up_i(A.diag_starts);
+    ds.args.A_lengths   = up_i(A.diag_lengths);
+    ds.args.A_num_diags = A.num_diags;
+    ds.args.B_values    = up_f(B.values);
+    ds.args.B_starts    = up_i(B.diag_starts);
+    ds.args.B_lengths   = up_i(B.diag_lengths);
+    ds.args.B_num_diags = B.num_diags;
+    ds.args.B_diag_lookup = up_i(b_lookup);
+    ds.args.n           = n;
+
+    /* C output */
+    float* d_C = nullptr;
+    CUDA_CHECK(cudaMalloc(&d_C, ds.c_bytes));
+    ds.allocs.push_back(d_C);
+    ds.args.C_values = d_C;
+
+    return ds;
+}
+
+static void free_device_state(DeviceState& ds)
+{
+    for (void* p : ds.allocs) cudaFree(p);
+    ds.allocs.clear();
+}
+
+/* ============================================================
  *            BENCHMARK 1: DiagSpMM (our algorithm)
  * ============================================================ */
 static BenchResult
@@ -186,17 +255,12 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
 {
     BenchResult res;
 
-    /* Host preprocessing */
     PreprocessResult pr = build_all_adaptive(A, B, n, n, n);
+    std::vector<int> b_lookup = build_b_diag_lookup(B, n);
 
-    /* Upload */
-    float*      d_A_values = upload_vec(A.values);
-    Task*       d_tasks    = upload_vec(pr.tasks);
-    Group*      d_groups   = upload_vec(pr.groups);
-    PairMeta*   d_pairs    = upload_vec(pr.pairs);
-    float*      d_packedB  = upload_vec(pr.packedB);
-    OutputDiag* d_c_diags  = upload_vec(pr.output_diags);
+    DeviceState ds = upload_diagspmm(A, B, n, pr, b_lookup);
 
+    /* Per-bucket task id uploads */
     int* d_light_ids  = upload_vec(pr.light_task_ids);
     int* d_medium_ids = upload_vec(pr.medium_task_ids);
     int* d_heavy_ids  = upload_vec(pr.heavy_task_ids);
@@ -207,34 +271,30 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
     int nh = (int)pr.heavy_task_ids.size();
     int nw = (int)pr.wide_task_ids.size();
 
-    float* d_C = nullptr;
-    size_t c_bytes = pr.total_c_values * sizeof(float);
-    CUDA_CHECK(cudaMalloc(&d_C, c_bytes));
+    /* Helper to launch all buckets. */
+    auto launch_all = [&]() {
+        KernelArgs ka = ds.args;
+        if (nl > 0) { ka.task_ids = d_light_ids;  ka.num_tasks = nl; launch_light_kernel(ka); }
+        if (nm > 0) { ka.task_ids = d_medium_ids; ka.num_tasks = nm; launch_medium_kernel(ka); }
+        if (nh > 0) { ka.task_ids = d_heavy_ids;  ka.num_tasks = nh; launch_heavy_kernel(ka); }
+        if (nw > 0) { ka.task_ids = d_wide_ids;   ka.num_tasks = nw; launch_wide_kernel(ka); }
+    };
 
     /* Warmup */
-    CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
-    if (nl > 0) launch_light_kernel (d_tasks, d_light_ids,  d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nl);
-    if (nm > 0) launch_medium_kernel(d_tasks, d_medium_ids, d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nm);
-    if (nh > 0) launch_heavy_kernel (d_tasks, d_heavy_ids,  d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nh);
-    if (nw > 0) launch_wide_kernel  (d_tasks, d_wide_ids,   d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nw);
+    CUDA_CHECK(cudaMemset(ds.args.C_values, 0, ds.c_bytes));
+    launch_all();
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    /* Timed runs: NUM_ITERS iterations, measure total then average. */
+    /* Timed runs */
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
 
-    CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
     CUDA_CHECK(cudaEventRecord(start));
-
     for (int iter = 0; iter < NUM_ITERS; ++iter) {
-        CUDA_CHECK(cudaMemset(d_C, 0, c_bytes));
-        if (nl > 0) launch_light_kernel (d_tasks, d_light_ids,  d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nl);
-        if (nm > 0) launch_medium_kernel(d_tasks, d_medium_ids, d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nm);
-        if (nh > 0) launch_heavy_kernel (d_tasks, d_heavy_ids,  d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nh);
-        if (nw > 0) launch_wide_kernel  (d_tasks, d_wide_ids,   d_groups, d_pairs, d_A_values, d_packedB, d_c_diags, d_C, nw);
+        CUDA_CHECK(cudaMemset(ds.args.C_values, 0, ds.c_bytes));
+        launch_all();
     }
-
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
     float total_ms = 0.0f;
@@ -243,7 +303,8 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
 
     /* Download and convert to dense */
     std::vector<float> h_C(pr.total_c_values);
-    CUDA_CHECK(cudaMemcpy(h_C.data(), d_C, c_bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C.data(), ds.args.C_values, ds.c_bytes,
+                          cudaMemcpyDeviceToHost));
 
     res.C_dense.assign(n * n, 0.0f);
     for (size_t di = 0; di < pr.output_diags.size(); ++di) {
@@ -258,11 +319,9 @@ bench_diagspmm(const DiagMatrix& A, const DiagMatrix& B, int n)
     /* Cleanup */
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
-    cudaFree(d_A_values); cudaFree(d_tasks); cudaFree(d_groups);
-    cudaFree(d_pairs); cudaFree(d_packedB); cudaFree(d_c_diags);
+    free_device_state(ds);
     cudaFree(d_light_ids); cudaFree(d_medium_ids);
     cudaFree(d_heavy_ids); cudaFree(d_wide_ids);
-    cudaFree(d_C);
 
     return res;
 }

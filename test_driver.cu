@@ -133,9 +133,7 @@ print_preprocess_summary(const PreprocessResult& pr)
     printf("    MEDIUM         : %zu\n", pr.medium_task_ids.size());
     printf("    HEAVY          : %zu\n", pr.heavy_task_ids.size());
     printf("    WIDE           : %zu\n", pr.wide_task_ids.size());
-    printf("  Groups           : %zu\n", pr.groups.size());
-    printf("  Pairs            : %zu\n", pr.pairs.size());
-    printf("  PackedB floats   : %zu\n", pr.packedB.size());
+    printf("  (zero-metadata: no Groups or PairMeta)\n");
     printf("\n");
 
     /* Print first few tasks per bucket for debugging */
@@ -151,9 +149,9 @@ print_preprocess_summary(const PreprocessResult& pr)
                           (t.bucket == 1) ? "MEDIUM" :
                           (t.bucket == 2) ? "HEAVY" : "WIDE";
         printf("  Task %zu: c_diag_offset=%d  p=[%d..%d)  p_len=%d  "
-               "groups=%d  work=%d  bucket=%s\n",
+               "work=%d  bucket=%s\n",
                i, t.c_offset, t.p_begin, t.p_begin + t.p_len,
-               t.p_len, t.group_count, t.work_est, bkt);
+               t.p_len, t.work_est, bkt);
     }
     printf("  ... (%zu total tasks)\n\n", pr.tasks.size());
 
@@ -544,17 +542,19 @@ int main()
     /* ---- Upload to device ---- */
     nvtx_push("device_upload", NVTX_UPLOAD);
 
-    /* A values */
-    float* d_A_values = upload(A.values);
+    std::vector<int> b_lookup = build_b_diag_lookup(B, N);
 
-    /* Preprocessed tables */
-    Task*       d_tasks   = upload(pr.tasks);
-    Group*      d_groups  = upload(pr.groups);
-    PairMeta*   d_pairs   = upload(pr.pairs);
-    float*      d_packedB = upload(pr.packedB);
-    OutputDiag* d_c_diags = upload(pr.output_diags);
+    Task*       d_tasks     = upload(pr.tasks);
+    OutputDiag* d_c_diags   = upload(pr.output_diags);
+    float*      d_A_values  = upload(A.values);
+    int*        d_A_offsets = upload(A.offsets);
+    int*        d_A_starts  = upload(A.diag_starts);
+    int*        d_A_lengths = upload(A.diag_lengths);
+    float*      d_B_values  = upload(B.values);
+    int*        d_B_starts  = upload(B.diag_starts);
+    int*        d_B_lengths = upload(B.diag_lengths);
+    int*        d_B_lookup  = upload(b_lookup);
 
-    /* Upload per-bucket task id lists for separate kernel dispatch. */
     int* d_light_task_ids  = upload(pr.light_task_ids);
     int* d_medium_task_ids = upload(pr.medium_task_ids);
     int* d_heavy_task_ids  = upload(pr.heavy_task_ids);
@@ -565,31 +565,43 @@ int main()
     const int num_heavy  = static_cast<int>(pr.heavy_task_ids.size());
     const int num_wide   = static_cast<int>(pr.wide_task_ids.size());
 
-    /* Output C (zero-initialized) */
     float* d_C_values = nullptr;
     size_t c_bytes = pr.total_c_values * sizeof(float);
     CUDA_CHECK(cudaMalloc(&d_C_values, c_bytes));
     CUDA_CHECK(cudaMemset(d_C_values, 0, c_bytes));
-    NVTX_POP(); /* device_upload */
+    NVTX_POP();
 
-    /* ---- Warm-up launch (excluded from profiling) ----
-     * Forces CUDA context + JIT init before the timed region.
-     * Without this, the first kernel launch includes driver
-     * overhead that is irrelevant to kernel performance.      */
+    /* Build base KernelArgs */
+    KernelArgs ka = {};
+    ka.tasks       = d_tasks;
+    ka.c_diags     = d_c_diags;
+    ka.C_values    = d_C_values;
+    ka.A_values    = d_A_values;
+    ka.A_offsets   = d_A_offsets;
+    ka.A_starts    = d_A_starts;
+    ka.A_lengths   = d_A_lengths;
+    ka.A_num_diags = A.num_diags;
+    ka.B_values    = d_B_values;
+    ka.B_starts    = d_B_starts;
+    ka.B_lengths   = d_B_lengths;
+    ka.B_num_diags = B.num_diags;
+    ka.B_diag_lookup = d_B_lookup;
+    ka.n           = N;
+
+    /* Helper lambda for per-bucket launch */
+    auto launch_bucket = [&](int* ids, int count, auto launcher) {
+        if (count == 0) return;
+        ka.task_ids = ids; ka.num_tasks = count;
+        launcher(ka);
+    };
+
+    /* ---- Warm-up launch ---- */
     {
         nvtx_push("warmup", 0xFF888888);
-        launch_light_kernel(d_tasks, d_light_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_light);
-        launch_medium_kernel(d_tasks, d_medium_task_ids, d_groups, d_pairs,
-                             d_A_values, d_packedB, d_c_diags,
-                             d_C_values, num_medium);
-        launch_heavy_kernel(d_tasks, d_heavy_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_heavy);
-        launch_wide_kernel(d_tasks, d_wide_task_ids, d_groups, d_pairs,
-                           d_A_values, d_packedB, d_c_diags,
-                           d_C_values, num_wide);
+        launch_bucket(d_light_task_ids,  num_light,  launch_light_kernel);
+        launch_bucket(d_medium_task_ids, num_medium, launch_medium_kernel);
+        launch_bucket(d_heavy_task_ids,  num_heavy,  launch_heavy_kernel);
+        launch_bucket(d_wide_task_ids,   num_wide,   launch_wide_kernel);
         CUDA_CHECK(cudaDeviceSynchronize());
         CUDA_CHECK(cudaMemset(d_C_values, 0, c_bytes));
         NVTX_POP();
@@ -616,53 +628,38 @@ int main()
     nvtx_push("kernel_all_buckets", NVTX_KERNEL);
     CUDA_CHECK(cudaEventRecord(ev_total_start));
 
-    /* Light bucket: multi-task-per-CTA, one warp per task. */
     if (num_light > 0) {
         nvtx_push("kernel_light", 0xFF88CC88);
         CUDA_CHECK(cudaEventRecord(ev_light_start));
-        launch_light_kernel(d_tasks, d_light_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_light);
+        launch_bucket(d_light_task_ids, num_light, launch_light_kernel);
         CUDA_CHECK(cudaEventRecord(ev_light_stop));
         NVTX_POP();
     }
-
-    /* Medium bucket: one CTA per task, 128 threads. */
     if (num_medium > 0) {
         nvtx_push("kernel_medium", 0xFF42f554);
         CUDA_CHECK(cudaEventRecord(ev_medium_start));
-        launch_medium_kernel(d_tasks, d_medium_task_ids, d_groups, d_pairs,
-                             d_A_values, d_packedB, d_c_diags,
-                             d_C_values, num_medium);
+        launch_bucket(d_medium_task_ids, num_medium, launch_medium_kernel);
         CUDA_CHECK(cudaEventRecord(ev_medium_stop));
         NVTX_POP();
     }
-
-    /* Heavy bucket: one CTA per task, 256 threads, double-buffered smemA. */
     if (num_heavy > 0) {
         nvtx_push("kernel_heavy", 0xFFCC4444);
         CUDA_CHECK(cudaEventRecord(ev_heavy_start));
-        launch_heavy_kernel(d_tasks, d_heavy_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_heavy);
+        launch_bucket(d_heavy_task_ids, num_heavy, launch_heavy_kernel);
         CUDA_CHECK(cudaEventRecord(ev_heavy_stop));
         NVTX_POP();
     }
-
-    /* Wide bucket: one CTA per task, 128 threads, 4 outputs per thread. */
     if (num_wide > 0) {
         nvtx_push("kernel_wide", 0xFF8844CC);
         CUDA_CHECK(cudaEventRecord(ev_wide_start));
-        launch_wide_kernel(d_tasks, d_wide_task_ids, d_groups, d_pairs,
-                           d_A_values, d_packedB, d_c_diags,
-                           d_C_values, num_wide);
+        launch_bucket(d_wide_task_ids, num_wide, launch_wide_kernel);
         CUDA_CHECK(cudaEventRecord(ev_wide_stop));
         NVTX_POP();
     }
 
     CUDA_CHECK(cudaEventRecord(ev_total_stop));
     CUDA_CHECK(cudaDeviceSynchronize());
-    NVTX_POP(); /* kernel_all_buckets */
+    NVTX_POP();
 
     /* ---- Collect DiaGPU timing ---- */
     float ms_total = 0, ms_light = 0, ms_medium = 0, ms_heavy = 0, ms_wide = 0;
@@ -761,16 +758,13 @@ int main()
     printf("\n");
 
     /* ---- Cleanup ---- */
-    cudaFree(d_A_values);
-    cudaFree(d_tasks);
-    cudaFree(d_groups);
-    cudaFree(d_pairs);
-    cudaFree(d_packedB);
-    cudaFree(d_c_diags);
-    cudaFree(d_light_task_ids);
-    cudaFree(d_medium_task_ids);
-    cudaFree(d_heavy_task_ids);
-    cudaFree(d_wide_task_ids);
+    cudaFree(d_tasks); cudaFree(d_c_diags);
+    cudaFree(d_A_values); cudaFree(d_A_offsets);
+    cudaFree(d_A_starts); cudaFree(d_A_lengths);
+    cudaFree(d_B_values); cudaFree(d_B_starts);
+    cudaFree(d_B_lengths); cudaFree(d_B_lookup);
+    cudaFree(d_light_task_ids); cudaFree(d_medium_task_ids);
+    cudaFree(d_heavy_task_ids); cudaFree(d_wide_task_ids);
     cudaFree(d_C_values);
 
     return pass ? 0 : 1;

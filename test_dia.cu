@@ -131,9 +131,7 @@ print_preprocess_summary(const PreprocessResult& pr)
     printf("    MEDIUM         : %zu\n", pr.medium_task_ids.size());
     printf("    HEAVY          : %zu\n", pr.heavy_task_ids.size());
     printf("    WIDE           : %zu\n", pr.wide_task_ids.size());
-    printf("  Groups           : %zu\n", pr.groups.size());
-    printf("  Pairs            : %zu\n", pr.pairs.size());
-    printf("  PackedB floats   : %zu\n", pr.packedB.size());
+    printf("  (zero-metadata: no Groups or PairMeta)\n");
     printf("\n");
 
     /* Print first few tasks per bucket for debugging */
@@ -149,9 +147,9 @@ print_preprocess_summary(const PreprocessResult& pr)
                           (t.bucket == 1) ? "MEDIUM" :
                           (t.bucket == 2) ? "HEAVY" : "WIDE";
         printf("  Task %zu: c_diag_offset=%d  p=[%d..%d)  p_len=%d  "
-               "groups=%d  work=%d  bucket=%s\n",
+               "work=%d  bucket=%s\n",
                i, t.c_offset, t.p_begin, t.p_begin + t.p_len,
-               t.p_len, t.group_count, t.work_est, bkt);
+               t.p_len, t.work_est, bkt);
     }
     printf("  ... (%zu total tasks)\n\n", pr.tasks.size());
 
@@ -253,23 +251,24 @@ int main()
     /* ---- Host preprocessing ---- */
     nvtx_push("host_preprocess", NVTX_PREPROCESS);
     PreprocessResult pr = build_all_adaptive(A, B, M, K, N);
+    std::vector<int> b_lookup = build_b_diag_lookup(B, N);
     NVTX_POP();
     print_preprocess_summary(pr);
 
     /* ---- Upload to device ---- */
     nvtx_push("device_upload", NVTX_UPLOAD);
 
-    /* A values */
-    float* d_A_values = upload(A.values);
-
-    /* Preprocessed tables */
     Task*       d_tasks   = upload(pr.tasks);
-    Group*      d_groups  = upload(pr.groups);
-    PairMeta*   d_pairs   = upload(pr.pairs);
-    float*      d_packedB = upload(pr.packedB);
     OutputDiag* d_c_diags = upload(pr.output_diags);
+    float*      d_A_values = upload(A.values);
+    int*        d_A_offsets = upload(A.offsets);
+    int*        d_A_starts  = upload(A.diag_starts);
+    int*        d_A_lengths = upload(A.diag_lengths);
+    float*      d_B_values  = upload(B.values);
+    int*        d_B_starts  = upload(B.diag_starts);
+    int*        d_B_lengths = upload(B.diag_lengths);
+    int*        d_B_lookup  = upload(b_lookup);
 
-    /* Upload per-bucket task id lists for separate kernel dispatch. */
     int* d_light_task_ids  = upload(pr.light_task_ids);
     int* d_medium_task_ids = upload(pr.medium_task_ids);
     int* d_heavy_task_ids  = upload(pr.heavy_task_ids);
@@ -280,64 +279,64 @@ int main()
     const int num_heavy  = static_cast<int>(pr.heavy_task_ids.size());
     const int num_wide   = static_cast<int>(pr.wide_task_ids.size());
 
-    /* Output C (zero-initialized) */
     float* d_C_values = nullptr;
     size_t c_bytes = pr.total_c_values * sizeof(float);
     CUDA_CHECK(cudaMalloc(&d_C_values, c_bytes));
     CUDA_CHECK(cudaMemset(d_C_values, 0, c_bytes));
-    NVTX_POP(); /* device_upload */
+    NVTX_POP();
+
+    /* Build base KernelArgs (task_ids/num_tasks set per bucket) */
+    KernelArgs ka = {};
+    ka.tasks       = d_tasks;
+    ka.c_diags     = d_c_diags;
+    ka.C_values    = d_C_values;
+    ka.A_values    = d_A_values;
+    ka.A_offsets   = d_A_offsets;
+    ka.A_starts    = d_A_starts;
+    ka.A_lengths   = d_A_lengths;
+    ka.A_num_diags = A.num_diags;
+    ka.B_values    = d_B_values;
+    ka.B_starts    = d_B_starts;
+    ka.B_lengths   = d_B_lengths;
+    ka.B_num_diags = B.num_diags;
+    ka.B_diag_lookup = d_B_lookup;
+    ka.n           = N;
 
     /* ---- Kernel launch (per-bucket dispatch) ---- */
     nvtx_push("kernel_all_buckets", NVTX_KERNEL);
 
     if (num_light > 0) {
-        nvtx_push("kernel_light", 0xFF88CC88);
-        launch_light_kernel(d_tasks, d_light_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_light);
-        NVTX_POP();
+        ka.task_ids = d_light_task_ids; ka.num_tasks = num_light;
+        launch_light_kernel(ka);
     }
-
     if (num_medium > 0) {
-        nvtx_push("kernel_medium", 0xFF42f554);
-        launch_medium_kernel(d_tasks, d_medium_task_ids, d_groups, d_pairs,
-                             d_A_values, d_packedB, d_c_diags,
-                             d_C_values, num_medium);
-        NVTX_POP();
+        ka.task_ids = d_medium_task_ids; ka.num_tasks = num_medium;
+        launch_medium_kernel(ka);
     }
-
     if (num_heavy > 0) {
-        nvtx_push("kernel_heavy", 0xFFCC4444);
-        launch_heavy_kernel(d_tasks, d_heavy_task_ids, d_groups, d_pairs,
-                            d_A_values, d_packedB, d_c_diags,
-                            d_C_values, num_heavy);
-        NVTX_POP();
+        ka.task_ids = d_heavy_task_ids; ka.num_tasks = num_heavy;
+        launch_heavy_kernel(ka);
     }
-
     if (num_wide > 0) {
-        nvtx_push("kernel_wide", 0xFF8844CC);
-        launch_wide_kernel(d_tasks, d_wide_task_ids, d_groups, d_pairs,
-                           d_A_values, d_packedB, d_c_diags,
-                           d_C_values, num_wide);
-        NVTX_POP();
+        ka.task_ids = d_wide_task_ids; ka.num_tasks = num_wide;
+        launch_wide_kernel(ka);
     }
 
     CUDA_CHECK(cudaDeviceSynchronize());
-    NVTX_POP(); /* kernel_all_buckets */
+    NVTX_POP();
 
     /* ---- Download results ---- */
     nvtx_push("device_download", NVTX_DOWNLOAD);
     std::vector<float> h_C_values(pr.total_c_values, 0.0f);
     CUDA_CHECK(cudaMemcpy(h_C_values.data(), d_C_values, c_bytes,
                           cudaMemcpyDeviceToHost));
-    NVTX_POP(); /* device_download */
+    NVTX_POP();
 
     /* ---- Verify against CPU reference ---- */
     printf("=== Verification ===\n");
-
     bool pass = true;
     int mismatches = 0;
-    const float tol = 1e-2f;   /* allow small fp accumulation error */
+    const float tol = 1e-2f;
 
     for (size_t di = 0; di < pr.output_diags.size(); ++di) {
         const OutputDiag& od = pr.output_diags[di];
@@ -348,25 +347,22 @@ int main()
             float cpu_val = C_dense[row * N + col];
             float diff = std::fabs(gpu_val - cpu_val);
             if (diff > tol) {
-                if (mismatches < 10) {
+                if (mismatches < 10)
                     printf("  MISMATCH d_c=%d p=%d (%d,%d): gpu=%.4f cpu=%.4f diff=%.4f\n",
                            od.offset, p, row, col, gpu_val, cpu_val, diff);
-                }
                 ++mismatches;
                 pass = false;
             }
         }
     }
 
-    if (pass) {
+    if (pass)
         printf("  PASS: All %d output values match CPU reference (tol=%.0e).\n",
                pr.total_c_values, tol);
-    } else {
+    else
         printf("  FAIL: %d / %d mismatches (tol=%.0e).\n",
                mismatches, pr.total_c_values, tol);
-    }
 
-    /* Print a few sample output diagonals for sanity */
     printf("\n=== Sample GPU output diagonals ===\n");
     for (size_t di = 0; di < pr.output_diags.size(); ++di) {
         const OutputDiag& od = pr.output_diags[di];
@@ -382,16 +378,13 @@ int main()
     printf("\n");
 
     /* ---- Cleanup ---- */
-    cudaFree(d_A_values);
-    cudaFree(d_tasks);
-    cudaFree(d_groups);
-    cudaFree(d_pairs);
-    cudaFree(d_packedB);
-    cudaFree(d_c_diags);
-    cudaFree(d_light_task_ids);
-    cudaFree(d_medium_task_ids);
-    cudaFree(d_heavy_task_ids);
-    cudaFree(d_wide_task_ids);
+    cudaFree(d_tasks); cudaFree(d_c_diags);
+    cudaFree(d_A_values); cudaFree(d_A_offsets);
+    cudaFree(d_A_starts); cudaFree(d_A_lengths);
+    cudaFree(d_B_values); cudaFree(d_B_starts);
+    cudaFree(d_B_lengths); cudaFree(d_B_lookup);
+    cudaFree(d_light_task_ids); cudaFree(d_medium_task_ids);
+    cudaFree(d_heavy_task_ids); cudaFree(d_wide_task_ids);
     cudaFree(d_C_values);
 
     return pass ? 0 : 1;
