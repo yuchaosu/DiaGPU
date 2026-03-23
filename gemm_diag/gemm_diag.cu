@@ -93,7 +93,6 @@ gemm_diag_kernel(
     __shared__ float SA[TI][TC];
     __shared__ float SB[TJ][SB_WIDTH];
     __shared__ float scratch[TI * TJ][TC]; /* flattened [TI*TJ][TC] */
-    __shared__ float reduce[MAX_K_PER_TILE][TC];
 
     /* Per-tile info for k mapping (populated by thread 0). */
     __shared__ int s_off_a[TI];           /* A offsets in this tile */
@@ -176,32 +175,55 @@ gemm_diag_kernel(
         }
         __syncthreads();
 
-        /* --- Phase 4: Reduce per output diagonal k --- */
-        /* Enumerate unique k values in this (A-tile, B-tile) combination.
-         * k = off_A[ri] + off_B[rj].
-         * Use the first MAX_K_PER_TILE * TC threads for reduction. */
+        /* --- Phase 4: Sequential reduction per output diagonal k ---
+         *
+         * Zero shared-memory atomics.  One thread per (k, t) reads
+         * all contributing scratch[ri][rj][t] entries directly.
+         *
+         * For Ti=4, Tj=4: up to TI+TJ-1=7 unique k values.
+         * Each k has 1..min(Ti,Tj) contributing (ri,rj) pairs.
+         *
+         * Precompute contributor list per k in shared memory:
+         *   s_k_contribs[ki][ci] = ri*TJ + rj (scratch row index)
+         *   s_k_num_contribs[ki] = count
+         *
+         * Thread assignment: tid = ki * TC + t  (ki < num_k, t < TC)
+         * Each thread sequentially sums s_k_num_contribs[ki] entries.
+         * Max contributors = min(Ti,Tj) = 4 → trivial loop.
+         * ---------------------------------------------------------- */
         {
-            /* Build k-value list (first MAX_K_PER_TILE threads). */
-            __shared__ int s_k_vals[MAX_K_PER_TILE];
-            __shared__ int s_num_k;
             __shared__ int s_off_b[TJ];
+            __shared__ int s_k_vals[MAX_K_PER_TILE];
+            __shared__ int s_k_contribs[MAX_K_PER_TILE][TI < TJ ? TJ : TI];
+            __shared__ int s_k_num_contribs[MAX_K_PER_TILE];
+            __shared__ int s_num_k;
 
+            /* Load B offsets for this B tile. */
             if (tid < TJ) {
                 int bj = jb * TJ + tid;
                 s_off_b[tid] = (bj < Q) ? off_B[bj] : 0;
             }
+
+            /* Thread 0 builds k-value list and contributor map. */
             if (tid == 0) {
                 s_num_k = 0;
                 for (int i = 0; i < TI && (ia * TI + i) < P; ++i) {
                     for (int j = 0; j < TJ && (jb * TJ + j) < Q; ++j) {
                         int k = s_off_a[i] + s_off_b[j];
-                        /* Check if k already in list */
-                        bool found = false;
+                        /* Find or create k entry. */
+                        int ki = -1;
                         for (int x = 0; x < s_num_k; ++x) {
-                            if (s_k_vals[x] == k) { found = true; break; }
+                            if (s_k_vals[x] == k) { ki = x; break; }
                         }
-                        if (!found && s_num_k < MAX_K_PER_TILE)
-                            s_k_vals[s_num_k++] = k;
+                        if (ki < 0 && s_num_k < MAX_K_PER_TILE) {
+                            ki = s_num_k++;
+                            s_k_vals[ki] = k;
+                            s_k_num_contribs[ki] = 0;
+                        }
+                        if (ki >= 0) {
+                            int ci = s_k_num_contribs[ki]++;
+                            s_k_contribs[ki][ci] = i * TJ + j;
+                        }
                     }
                 }
             }
@@ -209,40 +231,22 @@ gemm_diag_kernel(
 
             const int num_k = s_num_k;
 
-            /* Zero reduce buffer. */
-            if (tid < num_k * TC) {
-                int ki = tid / TC, t = tid % TC;
-                reduce[ki][t] = 0.0f;
-            }
-            __syncthreads();
-
-            /* Sum scratch entries into reduce buffer by k. */
-            if (ri < TI && rj < TJ) {
-                int ai = ia * TI + ri;
-                int bj = jb * TJ + rj;
-                if (ai < P && bj < Q) {
-                    int k = s_off_a[ri] + s_off_b[rj];
-                    /* Find k index */
-                    int ki = -1;
-                    for (int x = 0; x < num_k; ++x) {
-                        if (s_k_vals[x] == k) { ki = x; break; }
-                    }
-                    if (ki >= 0) {
-                        atomicAdd(&reduce[ki][t_local],
-                                  scratch[ri * TJ + rj][t_local]);
-                    }
-                }
-            }
-            __syncthreads();
-
-            /* Write reduced values to global C. */
+            /* Each thread (ki, t) sequentially sums contributors.
+             * No shared-memory atomics — pure register accumulation. */
             if (tid < num_k * TC) {
                 int ki = tid / TC;
                 int t  = tid % TC;
                 int k  = s_k_vals[ki];
-                float val = reduce[ki][t];
+                int nc = s_k_num_contribs[ki];
 
-                if (val != 0.0f) {
+                float acc = 0.0f;
+                for (int ci = 0; ci < nc; ++ci) {
+                    acc += scratch[s_k_contribs[ki][ci]][t];
+                }
+
+                /* Write to global C (atomicAdd: different A-tile CTAs
+                 * may contribute to the same (k,t) position). */
+                if (acc != 0.0f) {
                     int glob_t = t0 + t;
                     int idx = k + (n - 1);
                     if (idx >= 0 && idx < 2 * n - 1) {
@@ -251,7 +255,7 @@ gemm_diag_kernel(
                             int c_sr = (k >= 0) ? 0 : -k;
                             int p_c = glob_t - c_sr;
                             if (p_c >= 0 && p_c < C_lens[k_idx]) {
-                                atomicAdd(&C_data[C_offsets[k_idx] + p_c], val);
+                                atomicAdd(&C_data[C_offsets[k_idx] + p_c], acc);
                             }
                         }
                     }
