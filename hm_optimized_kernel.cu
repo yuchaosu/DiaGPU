@@ -95,7 +95,7 @@ void launch_hm_optimized(HMOptArgs args, cudaStream_t stream)
     const size_t smem_bytes = 4 * args.B_num_diags * sizeof(int);
 
     for (int ai = 0; ai < args.A_num_diags; ++ai) {
-        int a_len = args.A_lengths[ai];
+        int a_len = args.h_A_lengths[ai];
         if (a_len == 0) continue;
         int grid = (a_len + block - 1) / block;
         hm_optimized_kernel<<<grid, block, smem_bytes, stream>>>(args, ai);

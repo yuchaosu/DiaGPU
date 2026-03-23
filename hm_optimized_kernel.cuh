@@ -52,6 +52,10 @@ struct HMOptArgs {
 
     /* Output C */
     float*       C_values;
+
+    /* Host-side copy of A diagonal lengths for the launch loop.
+     * (A_lengths above is a device pointer, can't read on host.) */
+    const int*   h_A_lengths;    /* HOST pointer, size A_num_diags */
 };
 
 __global__ void hm_optimized_kernel(HMOptArgs args, int ai);

@@ -697,6 +697,7 @@ bench_hm_opt(const DiagMatrix& A_in, const DiagMatrix& B_in, int n)
     oa.b_sr = d_bsr; oa.b_start = d_bst; oa.b_len = d_bln;
     oa.c_base = d_cb;
     oa.C_values = d_C;
+    oa.h_A_lengths = A.diag_lengths.data();  /* host pointer for launch loop */
 
     /* Copy A_lengths to host for the launch loop. */
     /* (Already in h_A_lengths.) */
