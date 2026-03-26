@@ -181,10 +181,25 @@ struct HybridPlan {
 
 /* Build the full hybrid plan from two diagonal matrices.
  * A must have its offsets sorted ascending (call
- * sort_diag_matrix_by_offset from diag_host_preprocess.cuh). */
+ * sort_diag_matrix_by_offset from diag_host_preprocess.cuh).
+ *
+ * corner_thresh  — pair-count threshold for the corner/heavy split.
+ *                  A diagonal is routed heavy only when BOTH:
+ *                    num_pairs > corner_thresh
+ *                    c_length  > HYBRID_TILE_HEAVY
+ *                  Short diagonals always go corner regardless of pair count.
+ *                  Pass -1 (default) to use HYBRID_CORNER_THRESH.
+ *
+ * pairs_per_part — number of (dA,dB) pairs processed per stage-1 CTA for
+ *                  heavy diagonals.  Only relevant when corner_thresh < max
+ *                  pairs.  Pass -1 (default) to use HYBRID_PAIRS_PER_PART. */
 HybridPlan build_hybrid_plan(const DiagMatrix& A,
                               const DiagMatrix& B,
-                              int M, int K, int N);
+                              int M,
+                              int K,
+                              int N,
+                              int corner_thresh  = -1,
+                              int pairs_per_part = -1);
 
 /* ============================================================
  * Kernel declarations
