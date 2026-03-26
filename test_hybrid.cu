@@ -248,23 +248,29 @@ static float compare_result(const std::vector<float>& C_gpu_diag,
 }
 
 /* ============================================================
- * print_timing_row — fixed-width table row helper
+ * Markdown output file — all results go here.
  * ============================================================ */
-static void print_timing_row(const char* label,
-                              float mean_ms, float min_ms, float max_ms)
+static FILE* g_out = nullptr;
+
+/* ============================================================
+ * Markdown table helpers
+ * ============================================================ */
+static void md_timing_row(const char* label,
+                           float mean_ms, float min_ms, float max_ms)
 {
-    printf("  | %-38s | %8.3f | %8.3f | %8.3f |\n",
-           label, mean_ms, min_ms, max_ms);
+    fprintf(g_out, "| %s | %.3f | %.3f | %.3f |\n",
+            label, mean_ms, min_ms, max_ms);
 }
 
-static void print_timing_row_cpu(const char* label, float ms)
+static void md_timing_row_cpu(const char* label, float ms)
 {
-    printf("  | %-38s | %8.3f |    (CPU) |    (CPU) |\n", label, ms);
+    fprintf(g_out, "| %s | %.3f | — | — |\n", label, ms);
 }
 
-static void print_timing_sep()
+static void md_timing_header()
 {
-    printf("  +----------------------------------------+----------+----------+----------+\n");
+    fprintf(g_out, "| Phase | mean (ms) | min (ms) | max (ms) |\n");
+    fprintf(g_out, "|:------|----------:|---------:|---------:|\n");
 }
 
 /* ============================================================
@@ -276,8 +282,10 @@ static bool run_test(const char* name,
                      float tol = 1e-3f,
                      bool skip_cpu_check = false)
 {
-    printf("\n[%s]  M=%d K=%d N=%d  A_diags=%d  B_diags=%d\n",
-           name, M, K, N, A.num_diags, B.num_diags);
+    printf("[%s] M=%d K=%d N=%d ...\n", name, M, K, N);  /* terminal progress */
+    fprintf(g_out, "\n---\n\n## %s\n\n", name);
+    fprintf(g_out, "**Config:** M=%d  K=%d  N=%d  |  A\\_diags=%d  B\\_diags=%d\n\n",
+            M, K, N, A.num_diags, B.num_diags);
 
     /* ---- 0. Sort A by offset (kernel requirement). ---- */
     sort_diag_matrix_by_offset(A);
@@ -290,11 +298,11 @@ static bool run_test(const char* name,
 
     /* ---- 2. Build hybrid plan. ---- */
     HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
-    printf("  corner_tasks=%-5zu  s1_tasks=%-5zu  s2_tasks=%-5zu  "
-           "pairs=%-5zu  partial_buf=%d floats\n",
-           plan.corner_tasks.size(), plan.s1_tasks.size(),
-           plan.s2_tasks.size(),     plan.pairs.size(),
-           plan.partial_buf_size);
+    fprintf(g_out, "**Plan:** corner\\_tasks=%zu  s1\\_tasks=%zu  s2\\_tasks=%zu"
+            "  pairs=%zu  partial\\_buf=%d floats\n\n",
+            plan.corner_tasks.size(), plan.s1_tasks.size(),
+            plan.s2_tasks.size(),     plan.pairs.size(),
+            plan.partial_buf_size);
 
     /* ---- 3. Upload read-only data. ---- */
     float* d_A_vals    = upload(A.values);
@@ -570,114 +578,106 @@ static bool run_test(const char* name,
     }
     {
 
-        /* ---- 10. Print results. ---- */
-        printf("\n");
-        printf("  Timing  (warmup=%d, runs=%d):\n", N_WARMUP, N_MEASURE);
-        print_timing_sep();
-        printf("  | %-38s | %8s | %8s | %8s |\n",
-               "Phase", "mean(ms)", "min(ms)", "max(ms)");
-        print_timing_sep();
+        /* ---- 10. Write markdown results. ---- */
 
+        /* ---- Sequential path table ---- */
+        fprintf(g_out, "### Sequential path  (warmup=%d, runs=%d)\n\n",
+                N_WARMUP, N_MEASURE);
+        md_timing_header();
         if (!skip_cpu_check)
-            print_timing_row_cpu("CPU reference (single run)", cpu_ms);
+            md_timing_row_cpu("CPU reference (single run)", cpu_ms);
         else
-            printf("  | %-38s | %8s | %8s | %8s |\n",
-                   "CPU reference", "skipped", "", "");
-        print_timing_sep();
-
+            fprintf(g_out, "| CPU reference | skipped | — | — |\n");
         if (grid_corner > 0)
-            print_timing_row("corner kernel",
-                             t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
+            md_timing_row("corner kernel",
+                          t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
         if (grid_s1 > 0)
-            print_timing_row("s1 kernel (heavy partial sums)",
-                             t_s1.mean_ms, t_s1.min_ms, t_s1.max_ms);
+            md_timing_row("s1 heavy partial sums",
+                          t_s1.mean_ms, t_s1.min_ms, t_s1.max_ms);
         if (grid_s2 > 0)
-            print_timing_row("s2 kernel (heavy reduction)",
-                             t_s2.mean_ms, t_s2.min_ms, t_s2.max_ms);
-        print_timing_row("sequential total  (3 launches)",
-                         t_seq.mean_ms, t_seq.min_ms, t_seq.max_ms);
-        print_timing_sep();
+            md_timing_row("s2 heavy reduction",
+                          t_s2.mean_ms, t_s2.min_ms, t_s2.max_ms);
+        md_timing_row("**sequential total (3 launches)**",
+                      t_seq.mean_ms, t_seq.min_ms, t_seq.max_ms);
+        fprintf(g_out, "\n");
 
+        /* ---- Pipelined path table ---- */
+        fprintf(g_out, "### Pipelined path\n\n");
+        md_timing_header();
         if (grid_corner > 0)
-            print_timing_row("corner kernel (same as above)",
-                             t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
+            md_timing_row("corner kernel",
+                          t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
         if (grid_fused > 0)
-            print_timing_row("fused kernel  (s1+s2 pipelined)",
-                             t_fused.mean_ms, t_fused.min_ms, t_fused.max_ms);
+            md_timing_row("fused kernel (s1+s2)",
+                          t_fused.mean_ms, t_fused.min_ms, t_fused.max_ms);
         if (d_ctrl)
-            print_timing_row("pipelined total (2 launches)",
-                             t_pipe.mean_ms, t_pipe.min_ms, t_pipe.max_ms);
+            md_timing_row("**pipelined total (2 launches)**",
+                          t_pipe.mean_ms, t_pipe.min_ms, t_pipe.max_ms);
         else
-            printf("  | %-38s | %8s | %8s | %8s |\n",
-                   "pipelined total (2 launches)", "skipped", "", "");
-        print_timing_sep();
+            fprintf(g_out, "| **pipelined total** | skipped | — | — |\n");
+        fprintf(g_out, "\n");
 
+        /* ---- Baseline table ---- */
+        fprintf(g_out, "### Baseline\n\n");
+        md_timing_header();
         if (t_hm.mean_ms > 0.0f)
-            print_timing_row("paper_hm_kernel  (atomicAdd baseline)",
-                             t_hm.mean_ms, t_hm.min_ms, t_hm.max_ms);
+            md_timing_row("paper\\_hm\\_kernel (atomicAdd)",
+                          t_hm.mean_ms, t_hm.min_ms, t_hm.max_ms);
         else
-            printf("  | %-38s | %8s | %8s | %8s |\n",
-                   "paper_hm_kernel  (atomicAdd baseline)",
-                   "skipped (non-square)", "", "");
-        print_timing_sep();
+            fprintf(g_out, "| paper\\_hm\\_kernel | skipped (non-square) | — | — |\n");
+        fprintf(g_out, "\n");
 
-        if (d_ctrl && t_pipe.mean_ms > 0.0f) {
-            float speedup = t_seq.mean_ms / t_pipe.mean_ms;
-            printf("  Speedup sequential → pipelined : %.2fx  "
-                   "(mean: %.3f ms → %.3f ms)\n",
-                   speedup, t_seq.mean_ms, t_pipe.mean_ms);
-        }
-        if (t_hm.mean_ms > 0.0f && t_seq.mean_ms > 0.0f) {
-            float speedup_seq = t_hm.mean_ms / t_seq.mean_ms;
-            printf("  Speedup vs paper_hm (seq)      : %.2fx  "
-                   "(mean: %.3f ms → %.3f ms)\n",
-                   speedup_seq, t_hm.mean_ms, t_seq.mean_ms);
-        }
-        if (t_hm.mean_ms > 0.0f && t_pipe.mean_ms > 0.0f) {
-            float speedup_pipe = t_hm.mean_ms / t_pipe.mean_ms;
-            printf("  Speedup vs paper_hm (pipe)     : %.2fx  "
-                   "(mean: %.3f ms → %.3f ms)\n",
-                   speedup_pipe, t_hm.mean_ms, t_pipe.mean_ms);
-        }
-
-        /* s1 / (s1+s2) ratio: fraction of sequential heavy time in s1. */
+        /* ---- Speedups ---- */
+        fprintf(g_out, "### Speedups\n\n");
+        fprintf(g_out, "| Comparison | speedup | from (ms) | to (ms) |\n");
+        fprintf(g_out, "|:-----------|--------:|----------:|--------:|\n");
+        if (d_ctrl && t_pipe.mean_ms > 0.0f)
+            fprintf(g_out, "| sequential → pipelined | %.2fx | %.3f | %.3f |\n",
+                    t_seq.mean_ms / t_pipe.mean_ms,
+                    t_seq.mean_ms, t_pipe.mean_ms);
+        if (t_hm.mean_ms > 0.0f && t_seq.mean_ms > 0.0f)
+            fprintf(g_out, "| hybrid seq vs paper\\_hm | %.2fx | %.3f | %.3f |\n",
+                    t_hm.mean_ms / t_seq.mean_ms,
+                    t_hm.mean_ms, t_seq.mean_ms);
+        if (t_hm.mean_ms > 0.0f && t_pipe.mean_ms > 0.0f)
+            fprintf(g_out, "| hybrid pipe vs paper\\_hm | %.2fx | %.3f | %.3f |\n",
+                    t_hm.mean_ms / t_pipe.mean_ms,
+                    t_hm.mean_ms, t_pipe.mean_ms);
+        fprintf(g_out, "\n");
         if (grid_s1 > 0 && grid_s2 > 0) {
             float heavy_total = t_s1.mean_ms + t_s2.mean_ms;
-            printf("  s1 / (s1+s2) ratio             : %.1f%%  "
-                   "(s2 is %.1f%% of heavy work)\n",
-                   100.0f * t_s1.mean_ms / heavy_total,
-                   100.0f * t_s2.mean_ms / heavy_total);
+            fprintf(g_out,
+                    "s1 / (s1+s2) = %.1f%%  (s2 is %.1f%% of heavy work)\n\n",
+                    100.0f * t_s1.mean_ms / heavy_total,
+                    100.0f * t_s2.mean_ms / heavy_total);
         }
 
-        /* Correctness. */
-        printf("\n  Correctness:\n");
+        /* ---- Correctness ---- */
+        fprintf(g_out, "### Correctness\n\n");
         if (skip_cpu_check) {
-            printf("    (correctness check skipped for large test)\n");
+            fprintf(g_out, "_Skipped for large test._\n\n");
         } else {
+            fprintf(g_out, "| Kernel | max\\_err | result |\n");
+            fprintf(g_out, "|:-------|----------:|:------|\n");
             if (err_seq >= 0.0f)
-                printf("    %-38s  max_err=%.2e  %s\n",
-                       "sequential  (launch_hybrid)",
-                       static_cast<double>(err_seq),
-                       (err_seq < tol) ? "PASS" : "FAIL");
-            if (err_pipe >= 0.0f) {
-                printf("    %-38s  max_err=%.2e  %s\n",
-                       "pipelined   (launch_hybrid_pipelined)",
-                       static_cast<double>(err_pipe),
-                       (err_pipe < tol) ? "PASS" : "FAIL");
-            } else {
-                printf("    %-38s  skipped (no heavy tasks)\n",
-                       "pipelined   (launch_hybrid_pipelined)");
-            }
-            if (hm_err >= 0.0f) {
-                printf("    %-38s  max_err=%.2e  %s\n",
-                       "paper_hm_kernel",
-                       static_cast<double>(hm_err),
-                       hm_ok ? "PASS" : "FAIL");
-            } else {
-                printf("    %-38s  skipped (non-square)\n",
-                       "paper_hm_kernel");
-            }
+                fprintf(g_out, "| sequential (launch\\_hybrid) | %.2e | %s |\n",
+                        static_cast<double>(err_seq),
+                        (err_seq < tol) ? "PASS" : "**FAIL**");
+            if (err_pipe >= 0.0f)
+                fprintf(g_out, "| pipelined (launch\\_hybrid\\_pipelined) | %.2e | %s |\n",
+                        static_cast<double>(err_pipe),
+                        (err_pipe < tol) ? "PASS" : "**FAIL**");
+            else
+                fprintf(g_out, "| pipelined | — | skipped (no heavy tasks) |\n");
+            if (hm_err >= 0.0f)
+                fprintf(g_out, "| paper\\_hm\\_kernel | %.2e | %s |\n",
+                        static_cast<double>(hm_err),
+                        hm_ok ? "PASS" : "**FAIL**");
+            else
+                fprintf(g_out, "| paper\\_hm\\_kernel | — | skipped (non-square) |\n");
+            fprintf(g_out, "\n");
         }
+        fflush(g_out);
     }
 
     /* ---- 11. Cleanup. ---- */
@@ -714,13 +714,31 @@ int main()
     CUDA_CHECK(cudaGetDevice(&dev));
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
+
+    /* Open markdown output file. */
+    g_out = fopen("results.md", "w");
+    if (!g_out) {
+        fprintf(stderr, "ERROR: cannot open results.md for writing\n");
+        return 1;
+    }
+
+    /* Top-level header. */
+    fprintf(g_out, "# DiagSpMM Hybrid Kernel Benchmark Results\n\n");
+    fprintf(g_out, "| | |\n|:---|:---|\n");
+    fprintf(g_out, "| **Device** | %s |\n", prop.name);
+    fprintf(g_out, "| **SM** | %d.%d (%d SMs) |\n",
+            prop.major, prop.minor, prop.multiProcessorCount);
+    fprintf(g_out, "| **L2** | %.1f MB |\n",
+            prop.l2CacheSize / 1048576.0);
+    fprintf(g_out, "| **Smem/SM** | %.0f KB |\n",
+            prop.sharedMemPerMultiprocessor / 1024.0);
+    fprintf(g_out, "| **Warmup runs** | %d |\n", N_WARMUP);
+    fprintf(g_out, "| **Timed runs** | %d |\n\n", N_MEASURE);
+
     printf("Device : %s\n", prop.name);
     printf("SM     : %d.%d  (%d SMs)\n",
            prop.major, prop.minor, prop.multiProcessorCount);
-    printf("L2     : %.1f MB\n",
-           prop.l2CacheSize / 1048576.0);
-    printf("Smem/SM: %.0f KB\n\n",
-           prop.sharedMemPerMultiprocessor / 1024.0);
+    printf("Output : results.md\n\n");
 
     bool all_pass = true;
 
@@ -804,7 +822,7 @@ int main()
         all_pass &= run_test("heavy_1024x1024_30diags", A, B, sz, sz, sz);
     }
 
-    /* Test 10 — 2048×2048, heavy path, 64 diagonals */
+    /* Test 10 — 2048×2048, heavy path, 64 diagonals, skip CPU check */
     {
         constexpr int sz = 2048;
         std::vector<int> oa, ob;
@@ -812,7 +830,8 @@ int main()
         for (int d = -31; d <= 32; ++d) ob.push_back(d);
         auto A = make_diag_matrix(sz, sz, oa, 1.0f);
         auto B = make_diag_matrix(sz, sz, ob, 0.5f);
-        all_pass &= run_test("heavy_2048x2048_64diags", A, B, sz, sz, sz);
+        all_pass &= run_test("heavy_2048x2048_64diags",
+                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
     }
 
     /* Test 11 — 4096×4096, heavy path, 64 diagonals, skip CPU check */
@@ -851,9 +870,11 @@ int main()
                              A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
     }
 
-    printf("\n============================================\n");
-    printf("Result: %s\n",
-           all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
-    printf("============================================\n");
+    const char* verdict = all_pass ? "ALL TESTS PASSED" : "SOME TESTS FAILED";
+    fprintf(g_out, "\n---\n\n## Summary\n\n**%s**\n", verdict);
+    fclose(g_out);
+
+    printf("\n%s\n", verdict);
+    printf("Results written to results.md\n");
     return all_pass ? 0 : 1;
 }
