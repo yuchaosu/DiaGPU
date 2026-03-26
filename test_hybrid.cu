@@ -515,34 +515,36 @@ static bool run_test(const char* name,
                 _hCk, nzA, N);
         });
 
-        /* Correctness: scatter HM C to dense and compare. */
-        CUDA_CHECK(cudaMemset(d_hC_vals, 0,
-                              static_cast<size_t>(hm_C_nz) * sizeof(float)));
-        hm_structured_sparse_matmul_kernel<<<hm_grid, hm_block>>>(
-            d_hA_vals, d_hA_off, d_hA_st, d_hA_len, hm_nA,
-            d_hB_vals, d_hB_off, d_hB_st, d_hB_len, hm_nB,
-            d_hC_vals, d_hC_off, d_hC_st, d_hC_len, hm_nC,
-            d_hC_lkp, nzA, N);
-        CUDA_CHECK(cudaDeviceSynchronize());
+        /* Correctness: scatter HM C to dense and compare (only when
+         * C_ref is populated, i.e. skip_cpu_check is false). */
+        if (!skip_cpu_check) {
+            CUDA_CHECK(cudaMemset(d_hC_vals, 0,
+                                  static_cast<size_t>(hm_C_nz) * sizeof(float)));
+            hm_structured_sparse_matmul_kernel<<<hm_grid, hm_block>>>(
+                d_hA_vals, d_hA_off, d_hA_st, d_hA_len, hm_nA,
+                d_hB_vals, d_hB_off, d_hB_st, d_hB_len, hm_nB,
+                d_hC_vals, d_hC_off, d_hC_st, d_hC_len, hm_nC,
+                d_hC_lkp, nzA, N);
+            CUDA_CHECK(cudaDeviceSynchronize());
 
-        auto hm_C_host = download(d_hC_vals, static_cast<size_t>(hm_C_nz));
-        /* Scatter HM diagonal format → dense. */
-        std::vector<float> C_hm_dense(static_cast<size_t>(M) * N, 0.0f);
-        for (int ci = 0; ci < hm_nC; ++ci) {
-            int d_c = hm_C.diag_offsets[ci];
-            int sr  = (d_c >= 0) ? 0 : -d_c;
-            int sc  = (d_c >= 0) ? d_c : 0;
-            int len = hm_C.diag_lengths[ci];
-            int st  = hm_C.diag_starts[ci];
-            for (int p = 0; p < len; ++p)
-                C_hm_dense[static_cast<size_t>(sr + p) * N + (sc + p)] =
-                    hm_C_host[st + p];
+            auto hm_C_host = download(d_hC_vals, static_cast<size_t>(hm_C_nz));
+            std::vector<float> C_hm_dense(static_cast<size_t>(M) * N, 0.0f);
+            for (int ci = 0; ci < hm_nC; ++ci) {
+                int d_c = hm_C.diag_offsets[ci];
+                int sr  = (d_c >= 0) ? 0 : -d_c;
+                int sc  = (d_c >= 0) ? d_c : 0;
+                int len = hm_C.diag_lengths[ci];
+                int st  = hm_C.diag_starts[ci];
+                for (int p = 0; p < len; ++p)
+                    C_hm_dense[static_cast<size_t>(sr + p) * N + (sc + p)] =
+                        hm_C_host[st + p];
+            }
+            hm_err = 0.0f;
+            for (size_t i = 0; i < C_hm_dense.size(); ++i)
+                hm_err = std::max(hm_err,
+                                  fabsf(C_hm_dense[i] - C_ref[i]));
+            hm_ok = (hm_err < tol);
         }
-        hm_err = 0.0f;
-        for (size_t i = 0; i < C_hm_dense.size(); ++i)
-            hm_err = std::max(hm_err,
-                              fabsf(C_hm_dense[i] - C_ref[i]));
-        hm_ok = (hm_err < tol);
     }
 
     /* ---- 9. Correctness check (one run each, output written once). ---- */
