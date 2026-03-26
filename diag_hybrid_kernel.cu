@@ -379,7 +379,9 @@ static int hybrid_pad_to_wave(int num_blocks, int min_blocks_per_sm)
  * ============================================================ */
 HybridPlan build_hybrid_plan(const DiagMatrix& A,
                               const DiagMatrix& B,
-                              int M, int K, int N)
+                              int M, int K, int N,
+                              int corner_thresh,
+                              int pairs_per_part)
 {
     HybridPlan plan;
 
@@ -390,6 +392,10 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
     /* Precompute B offset bounds for the A-range binary search. */
     int B_off_min = *std::min_element(B.offsets.begin(), B.offsets.end());
     int B_off_max = *std::max_element(B.offsets.begin(), B.offsets.end());
+
+    /* Resolve auto parameters (-1 = use compile-time defaults). */
+    if (corner_thresh  < 0) corner_thresh  = HYBRID_CORNER_THRESH;
+    if (pairs_per_part < 0) pairs_per_part = HYBRID_PAIRS_PER_PART;
 
     /* Step 2 — build c_diags table. */
     int c_val_offset = 0;
@@ -415,7 +421,14 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
         if (info.contributors.empty()) continue;
         int c_idx     = c_idx_map[d_c];
         int num_pairs = static_cast<int>(info.contributors.size());
-        bool is_heavy = (num_pairs > HYBRID_CORNER_THRESH);
+        /* Route to heavy only when BOTH conditions hold:
+         *   1. many contributor pairs  → pair-partition parallelism needed
+         *   2. long diagonal           → enough segments to amortise partial_buf
+         * Short diagonals go corner regardless of pair count: their total
+         * work is bounded by length, so sequential pair looping is cheaper
+         * than the partial_buf round-trip.                                  */
+        bool is_heavy = (num_pairs > corner_thresh)
+                     && (info.c_length > HYBRID_TILE_HEAVY);
 
         if (!is_heavy) {
             /* ---- Corner path ---- */
@@ -453,8 +466,8 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
                 plan.pairs.push_back(hp);
             }
 
-            int num_partitions = (num_pairs + HYBRID_PAIRS_PER_PART - 1)
-                                 / HYBRID_PAIRS_PER_PART;
+            int num_partitions = (num_pairs + pairs_per_part - 1)
+                                 / pairs_per_part;
 
             for (int p = 0; p < info.c_length; p += HYBRID_TILE_HEAVY) {
                 int p_len = std::min(HYBRID_TILE_HEAVY, info.c_length - p);
@@ -476,9 +489,9 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
 
                 /* Stage-1 task per pair partition. */
                 for (int part = 0; part < num_partitions; ++part) {
-                    int pairs_begin = pairs_base + part * HYBRID_PAIRS_PER_PART;
-                    int pairs_count = std::min(HYBRID_PAIRS_PER_PART,
-                                               num_pairs - part * HYBRID_PAIRS_PER_PART);
+                    int pairs_begin = pairs_base + part * pairs_per_part;
+                    int pairs_count = std::min(pairs_per_part,
+                                               num_pairs - part * pairs_per_part);
 
                     HybridS1Task t1;
                     t1.c_idx           = c_idx;
