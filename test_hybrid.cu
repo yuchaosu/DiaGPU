@@ -535,12 +535,11 @@ static bool run_test(const char* name,
             hm_err = std::max(hm_err,
                               fabsf(C_hm_dense[i] - C_ref[i]));
         hm_ok = (hm_err < tol);
-        all_ok &= hm_ok;
-
     }
 
     /* ---- 9. Correctness check (one run each, output written once). ---- */
     bool all_ok = true;
+    all_ok &= hm_ok;
     float err_seq  = -1.0f;
     float err_pipe = -1.0f;
 
