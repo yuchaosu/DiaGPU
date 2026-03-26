@@ -610,123 +610,112 @@ hybrid_heavy_fused_kernel(HybridKernelArgs args, int* ctrl)
     __shared__ float smem_B[HYBRID_TILE_HEAVY];
 
     /* Shared scratch so thread 0's atomic results are visible to all. */
-    __shared__ int sh_s1_idx;
-    __shared__ int sh_s2_idx;
+    __shared__ int sh_idx;
 
-    /* Track whether the per-CTA s1 work is exhausted. */
-    bool s1_done = false;
+    /* ---- Phase A: drain all s1 tasks (grid-stride) ---- *
+     *
+     * Each CTA claims s1 tasks until the global pool is exhausted.
+     * All CTAs must complete Phase A before any CTA enters Phase B,
+     * otherwise the following deadlock arises:
+     *   n_s1 >> n_CTAs  →  only ~n_CTAs/n_s1 pending decrements per
+     *   segment after one Phase A pass  →  all CTAs block in Phase B
+     *   spin-wait while remaining s1 tasks are never executed.
+     *
+     * With sequential phases every pending count reaches 0 before the
+     * first Phase B spin-wait begins.                                  */
+    for (;;) {
+        if (tid == 0) sh_idx = atomicAdd(s1_next, 1);
+        __syncthreads();
+        if (sh_idx >= args.n_s1) break;   /* s1 pool exhausted */
 
-    /* Total s2 slots to process is n_s2; we stop when the global
-     * s2_claim counter would exceed n_s2 AND all s2 is processed. */
-    int s2_processed = 0;
+        const HybridS1Task task = args.s1_tasks[sh_idx];
+        const bool active = (tid < task.p_len);
 
-    while (s2_processed < args.n_s2) {
+        const int d_c     = task.c_offset;
+        const int c_sr    = (d_c >= 0) ? 0 : -d_c;
+        const int p_begin = task.p_begin;
 
-        /* ---- Phase A: claim and execute one s1 task (if any left) ---- */
-        if (!s1_done) {
-            if (tid == 0) sh_s1_idx = atomicAdd(s1_next, 1);
-            __syncthreads();
-            int s1_idx = sh_s1_idx;
+        float acc = 0.0f;
 
-            if (s1_idx < args.n_s1) {
-                const HybridS1Task task = args.s1_tasks[s1_idx];
-                const bool active = (tid < task.p_len);
+        for (int pi = 0; pi < task.pair_count; ++pi) {
+            const HybridPair pe = args.pairs[task.pair_begin + pi];
+            const int ai  = pe.ai;
+            const int bi  = pe.bi;
+            const int d_a = args.A_offsets[ai];
+            const int d_b = args.B_offsets[bi];
 
-                const int d_c     = task.c_offset;
-                const int c_sr    = (d_c >= 0) ? 0 : -d_c;
-                const int p_begin = task.p_begin;
-
-                float acc = 0.0f;
-
-                for (int pi = 0; pi < task.pair_count; ++pi) {
-                    const HybridPair pe = args.pairs[task.pair_begin + pi];
-                    const int ai  = pe.ai;
-                    const int bi  = pe.bi;
-                    const int d_a = args.A_offsets[ai];
-                    const int d_b = args.B_offsets[bi];
-
-                    {
-                        const int a_sr  = (d_a >= 0) ? 0 : -d_a;
-                        const int a_pos = c_sr - a_sr + p_begin + tid;
-                        smem_A[tid] = (a_pos >= 0 && a_pos < args.A_lengths[ai])
-                                    ? args.A_vals[args.A_starts[ai] + a_pos]
-                                    : 0.0f;
-                    }
-                    {
-                        const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                        const int b_pos = c_sr + d_a - b_sr + p_begin + tid;
-                        smem_B[tid] = (b_pos >= 0 && b_pos < args.B_lengths[bi])
-                                    ? args.B_vals[args.B_starts[bi] + b_pos]
-                                    : 0.0f;
-                    }
-                    __syncthreads();
-                    if (active) acc += smem_A[tid] * smem_B[tid];
-                    __syncthreads();
-                }
-
-                if (active) {
-                    args.partial_buf[task.partial_offset + tid] = acc;
-                }
-                __syncthreads();
-
-                /* Commit partial_buf write before decrementing pending.
-                 * __threadfence() makes the write visible to ALL CTAs,
-                 * not just those in this block. */
-                if (tid == 0) {
-                    __threadfence();
-                    atomicSub(&pending[task.s2_task_idx], 1);
-                }
-                __syncthreads();
-
-            } else {
-                /* s1 pool exhausted for this CTA. */
-                s1_done = true;
+            {
+                const int a_sr  = (d_a >= 0) ? 0 : -d_a;
+                const int a_pos = c_sr - a_sr + p_begin + tid;
+                smem_A[tid] = (a_pos >= 0 && a_pos < args.A_lengths[ai])
+                            ? args.A_vals[args.A_starts[ai] + a_pos]
+                            : 0.0f;
             }
+            {
+                const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                const int b_pos = c_sr + d_a - b_sr + p_begin + tid;
+                smem_B[tid] = (b_pos >= 0 && b_pos < args.B_lengths[bi])
+                            ? args.B_vals[args.B_starts[bi] + b_pos]
+                            : 0.0f;
+            }
+            __syncthreads();
+            if (active) acc += smem_A[tid] * smem_B[tid];
+            __syncthreads();
         }
 
-        /* ---- Phase B: claim and execute one ready s2 task ---- */
-        if (tid == 0) sh_s2_idx = atomicAdd(s2_claim, 1);
+        if (active) {
+            args.partial_buf[task.partial_offset + tid] = acc;
+        }
         __syncthreads();
-        int s2_idx = sh_s2_idx;
 
-        if (s2_idx < args.n_s2) {
-            /* Spin until all s1 partitions for this segment are done.
-             * Use a volatile load to defeat compiler caching.
-             * __nanosleep(64) yields the SM briefly on Ampere+ to
-             * reduce power during the spin; remove if not available. */
-            if (tid == 0) {
-                while (atomicAdd(&pending[s2_idx], 0) != 0) {
-#if __CUDA_ARCH__ >= 700
-                    __nanosleep(64);
-#endif
-                }
-            }
-            __syncthreads();
+        /* Flush partial_buf to L2/DRAM before signalling s2. */
+        if (tid == 0) {
+            __threadfence();
+            atomicSub(&pending[task.s2_task_idx], 1);
+        }
+        __syncthreads();
+    }
 
-            /* Reduce all partial slots for this segment. */
-            const HybridS2Task task = args.s2_tasks[s2_idx];
+    /* ---- Phase B: drain all s2 tasks (grid-stride) ---- *
+     *
+     * All s1 tasks are now either done or in-flight on other CTAs.
+     * Spin-wait on pending[s2_idx] is guaranteed to terminate because
+     * all s1 tasks will complete (the Phase A loop above is bounded).  */
+    for (;;) {
+        if (tid == 0) sh_idx = atomicAdd(s2_claim, 1);
+        __syncthreads();
+        const int s2_idx = sh_idx;
 
-            if (tid < task.p_len) {
-                float sum = 0.0f;
-                #pragma unroll 4
-                for (int p = 0; p < task.num_partials; ++p) {
-                    sum += args.partial_buf[task.partial_offset
-                                            + p * HYBRID_TILE_HEAVY
-                                            + tid];
-                }
-                const HybridCDiag cd = args.c_diags[task.c_idx];
-                args.C_vals[cd.values_start + task.p_begin + tid] = sum;
-            }
-            __syncthreads();
-
-            ++s2_processed;
-        } else {
-            /* s2 claim counter exceeded n_s2: undo the increment so
-             * other CTAs don't see a spurious overflow, then exit. */
+        if (s2_idx >= args.n_s2) {
             if (tid == 0) atomicSub(s2_claim, 1);
             __syncthreads();
             break;
         }
+
+        /* Spin until all s1 partitions for this segment are committed. */
+        if (tid == 0) {
+            while (atomicAdd(&pending[s2_idx], 0) != 0) {
+#if __CUDA_ARCH__ >= 700
+                __nanosleep(64);
+#endif
+            }
+        }
+        __syncthreads();
+
+        /* Reduce partial slots → C. */
+        const HybridS2Task task = args.s2_tasks[s2_idx];
+        if (tid < task.p_len) {
+            float sum = 0.0f;
+            #pragma unroll 4
+            for (int p = 0; p < task.num_partials; ++p) {
+                sum += args.partial_buf[task.partial_offset
+                                        + p * HYBRID_TILE_HEAVY
+                                        + tid];
+            }
+            const HybridCDiag cd = args.c_diags[task.c_idx];
+            args.C_vals[cd.values_start + task.p_begin + tid] = sum;
+        }
+        __syncthreads();
     }
 }
 
