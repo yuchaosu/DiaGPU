@@ -20,10 +20,11 @@
  *   - Correctness (max absolute error vs CPU reference)
  *
  * Compile:
- *   nvcc test_hybrid.cu diag_hybrid_kernel.cu -o test_hybrid -std=c++17
+ *   nvcc test_hybrid.cu diag_hybrid_kernel.cu paper_hm_kernel.cu -o test_hybrid -std=c++17
  * ============================================================ */
 
 #include "diag_hybrid_kernel.cuh"
+#include "paper_hm.cuh"
 
 #include <algorithm>
 #include <chrono>
@@ -272,7 +273,8 @@ static void print_timing_sep()
 static bool run_test(const char* name,
                      DiagMatrix A, DiagMatrix B,
                      int M, int K, int N,
-                     float tol = 1e-3f)
+                     float tol = 1e-3f,
+                     bool skip_cpu_check = false)
 {
     printf("\n[%s]  M=%d K=%d N=%d  A_diags=%d  B_diags=%d\n",
            name, M, K, N, A.num_diags, B.num_diags);
@@ -282,7 +284,9 @@ static bool run_test(const char* name,
 
     /* ---- 1. CPU reference (single run, wall-clock timed). ---- */
     std::vector<float> C_ref;
-    float cpu_ms = cpu_reference(A, B, M, K, N, C_ref);
+    float cpu_ms = 0.0f;
+    if (!skip_cpu_check)
+        cpu_ms = cpu_reference(A, B, M, K, N, C_ref);
 
     /* ---- 2. Build hybrid plan. ---- */
     HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
@@ -427,27 +431,131 @@ static bool run_test(const char* name,
         });
     }
 
+    /* ---- 8b. paper_hm_kernel baseline (square matrices only). ---- */
+    TimingResult t_hm   = {};
+    float        hm_err = -1.0f;
+    bool         hm_ok  = true;
+
+    /* Device pointers for HM — kept alive until cleanup. */
+    float* d_hA_vals = nullptr; int* d_hA_off = nullptr;
+    int*   d_hA_st   = nullptr; int* d_hA_len = nullptr;
+    float* d_hB_vals = nullptr; int* d_hB_off = nullptr;
+    int*   d_hB_st   = nullptr; int* d_hB_len = nullptr;
+    float* d_hC_vals = nullptr; int* d_hC_off = nullptr;
+    int*   d_hC_st   = nullptr; int* d_hC_len = nullptr;
+    int*   d_hC_lkp  = nullptr;
+    int    hm_C_nz   = 0;
+    if (M == K && K == N) {
+        /* Build HMMatrix from DiagMatrix fields (same layout). */
+        HMMatrix hm_A, hm_B;
+        hm_A.n = N;  hm_A.num_diags = A.num_diags;
+        hm_A.diag_offsets = A.offsets;
+        hm_A.diag_starts  = A.diag_starts;
+        hm_A.diag_lengths = A.diag_lengths;
+        hm_A.values       = A.values;
+        hm_A.total_nz     = static_cast<int>(A.values.size());
+
+        hm_B.n = N;  hm_B.num_diags = B.num_diags;
+        hm_B.diag_offsets = B.offsets;
+        hm_B.diag_starts  = B.diag_starts;
+        hm_B.diag_lengths = B.diag_lengths;
+        hm_B.values       = B.values;
+        hm_B.total_nz     = static_cast<int>(B.values.size());
+
+        HMMatrix hm_C     = compute_c_hm_structure(hm_A, hm_B, N);
+        auto     c_lookup = build_c_diag_lookup(hm_C, N);
+        hm_C_nz           = hm_C.total_nz;
+
+        d_hA_vals = upload(hm_A.values);
+        d_hA_off  = upload(hm_A.diag_offsets);
+        d_hA_st   = upload(hm_A.diag_starts);
+        d_hA_len  = upload(hm_A.diag_lengths);
+        d_hB_vals = upload(hm_B.values);
+        d_hB_off  = upload(hm_B.diag_offsets);
+        d_hB_st   = upload(hm_B.diag_starts);
+        d_hB_len  = upload(hm_B.diag_lengths);
+        CUDA_CHECK(cudaMalloc(&d_hC_vals,
+                              static_cast<size_t>(hm_C_nz) * sizeof(float)));
+        d_hC_off  = upload(hm_C.diag_offsets);
+        d_hC_st   = upload(hm_C.diag_starts);
+        d_hC_len  = upload(hm_C.diag_lengths);
+        d_hC_lkp  = upload(c_lookup);
+
+        const int nzA      = hm_A.total_nz;
+        const int hm_block = 256;
+        const int hm_grid  = (nzA + hm_block - 1) / hm_block;
+        const int hm_nA    = hm_A.num_diags;
+        const int hm_nB    = hm_B.num_diags;
+        const int hm_nC    = hm_C.num_diags;
+
+        /* Capture device pointers by value so the lambda is self-contained. */
+        float* _hAv = d_hA_vals; int* _hAo = d_hA_off;
+        int*   _hAs = d_hA_st;   int* _hAl = d_hA_len;
+        float* _hBv = d_hB_vals; int* _hBo = d_hB_off;
+        int*   _hBs = d_hB_st;   int* _hBl = d_hB_len;
+        float* _hCv = d_hC_vals; int* _hCo = d_hC_off;
+        int*   _hCs = d_hC_st;   int* _hCl = d_hC_len;
+        int*   _hCk = d_hC_lkp;
+
+        t_hm = measure_gpu([=] {
+            CUDA_CHECK(cudaMemset(_hCv, 0,
+                                  static_cast<size_t>(hm_C_nz) * sizeof(float)));
+            hm_structured_sparse_matmul_kernel<<<hm_grid, hm_block>>>(
+                _hAv, _hAo, _hAs, _hAl, hm_nA,
+                _hBv, _hBo, _hBs, _hBl, hm_nB,
+                _hCv, _hCo, _hCs, _hCl, hm_nC,
+                _hCk, nzA, N);
+        });
+
+        /* Correctness: scatter HM C to dense and compare. */
+        CUDA_CHECK(cudaMemset(d_hC_vals, 0,
+                              static_cast<size_t>(hm_C_nz) * sizeof(float)));
+        hm_structured_sparse_matmul_kernel<<<hm_grid, hm_block>>>(
+            d_hA_vals, d_hA_off, d_hA_st, d_hA_len, hm_nA,
+            d_hB_vals, d_hB_off, d_hB_st, d_hB_len, hm_nB,
+            d_hC_vals, d_hC_off, d_hC_st, d_hC_len, hm_nC,
+            d_hC_lkp, nzA, N);
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        auto hm_C_host = download(d_hC_vals, static_cast<size_t>(hm_C_nz));
+        /* Scatter HM diagonal format → dense. */
+        std::vector<float> C_hm_dense(static_cast<size_t>(M) * N, 0.0f);
+        for (int ci = 0; ci < hm_nC; ++ci) {
+            int d_c = hm_C.diag_offsets[ci];
+            int sr  = (d_c >= 0) ? 0 : -d_c;
+            int sc  = (d_c >= 0) ? d_c : 0;
+            int len = hm_C.diag_lengths[ci];
+            int st  = hm_C.diag_starts[ci];
+            for (int p = 0; p < len; ++p)
+                C_hm_dense[static_cast<size_t>(sr + p) * N + (sc + p)] =
+                    hm_C_host[st + p];
+        }
+        hm_err = 0.0f;
+        for (size_t i = 0; i < C_hm_dense.size(); ++i)
+            hm_err = std::max(hm_err,
+                              fabsf(C_hm_dense[i] - C_ref[i]));
+        hm_ok = (hm_err < tol);
+        all_ok &= hm_ok;
+
+    }
+
     /* ---- 9. Correctness check (one run each, output written once). ---- */
     bool all_ok = true;
+    float err_seq  = -1.0f;
+    float err_pipe = -1.0f;
 
-    /* Sequential correctness. */
-    CUDA_CHECK(cudaMemset(d_C_vals, 0,
-               static_cast<size_t>(plan.total_c_values) * sizeof(float)));
-    launch_hybrid(kargs);
-    CUDA_CHECK(cudaDeviceSynchronize());
-    {
-        auto C_gpu = download(d_C_vals,
-                              static_cast<size_t>(plan.total_c_values));
-        float err = compare_result(C_gpu, plan, C_ref, M, N);
-        bool ok = (err < tol);
-        all_ok &= ok;
-        /* Store for printing below. */
-        printf(""); /* placeholder: printed in table below */
-        (void)err; (void)ok;  /* printed in summary */
-
-        /* Re-use err for pipelined check. */
-        float err_seq = err;
-        float err_pipe = -1.0f;
+    if (!skip_cpu_check) {
+        /* Sequential correctness. */
+        CUDA_CHECK(cudaMemset(d_C_vals, 0,
+                   static_cast<size_t>(plan.total_c_values) * sizeof(float)));
+        launch_hybrid(kargs);
+        CUDA_CHECK(cudaDeviceSynchronize());
+        {
+            auto C_gpu = download(d_C_vals,
+                                  static_cast<size_t>(plan.total_c_values));
+            err_seq = compare_result(C_gpu, plan, C_ref, M, N);
+            all_ok &= (err_seq < tol);
+        }
 
         /* Pipelined correctness. */
         if (d_ctrl) {
@@ -460,6 +568,8 @@ static bool run_test(const char* name,
             err_pipe = compare_result(C_gpu2, plan, C_ref, M, N);
             all_ok &= (err_pipe < tol);
         }
+    }
+    {
 
         /* ---- 10. Print results. ---- */
         printf("\n");
@@ -469,7 +579,11 @@ static bool run_test(const char* name,
                "Phase", "mean(ms)", "min(ms)", "max(ms)");
         print_timing_sep();
 
-        print_timing_row_cpu("CPU reference (single run)", cpu_ms);
+        if (!skip_cpu_check)
+            print_timing_row_cpu("CPU reference (single run)", cpu_ms);
+        else
+            printf("  | %-38s | %8s | %8s | %8s |\n",
+                   "CPU reference", "skipped", "", "");
         print_timing_sep();
 
         if (grid_corner > 0)
@@ -499,11 +613,32 @@ static bool run_test(const char* name,
                    "pipelined total (2 launches)", "skipped", "", "");
         print_timing_sep();
 
+        if (t_hm.mean_ms > 0.0f)
+            print_timing_row("paper_hm_kernel  (atomicAdd baseline)",
+                             t_hm.mean_ms, t_hm.min_ms, t_hm.max_ms);
+        else
+            printf("  | %-38s | %8s | %8s | %8s |\n",
+                   "paper_hm_kernel  (atomicAdd baseline)",
+                   "skipped (non-square)", "", "");
+        print_timing_sep();
+
         if (d_ctrl && t_pipe.mean_ms > 0.0f) {
             float speedup = t_seq.mean_ms / t_pipe.mean_ms;
             printf("  Speedup sequential → pipelined : %.2fx  "
                    "(mean: %.3f ms → %.3f ms)\n",
                    speedup, t_seq.mean_ms, t_pipe.mean_ms);
+        }
+        if (t_hm.mean_ms > 0.0f && t_seq.mean_ms > 0.0f) {
+            float speedup_seq = t_hm.mean_ms / t_seq.mean_ms;
+            printf("  Speedup vs paper_hm (seq)      : %.2fx  "
+                   "(mean: %.3f ms → %.3f ms)\n",
+                   speedup_seq, t_hm.mean_ms, t_seq.mean_ms);
+        }
+        if (t_hm.mean_ms > 0.0f && t_pipe.mean_ms > 0.0f) {
+            float speedup_pipe = t_hm.mean_ms / t_pipe.mean_ms;
+            printf("  Speedup vs paper_hm (pipe)     : %.2fx  "
+                   "(mean: %.3f ms → %.3f ms)\n",
+                   speedup_pipe, t_hm.mean_ms, t_pipe.mean_ms);
         }
 
         /* s1 / (s1+s2) ratio: fraction of sequential heavy time in s1. */
@@ -517,18 +652,32 @@ static bool run_test(const char* name,
 
         /* Correctness. */
         printf("\n  Correctness:\n");
-        printf("    %-38s  max_err=%.2e  %s\n",
-               "sequential  (launch_hybrid)",
-               static_cast<double>(err_seq),
-               (err_seq < tol) ? "PASS" : "FAIL");
-        if (err_pipe >= 0.0f) {
-            printf("    %-38s  max_err=%.2e  %s\n",
-                   "pipelined   (launch_hybrid_pipelined)",
-                   static_cast<double>(err_pipe),
-                   (err_pipe < tol) ? "PASS" : "FAIL");
+        if (skip_cpu_check) {
+            printf("    (correctness check skipped for large test)\n");
         } else {
-            printf("    %-38s  skipped (no heavy tasks)\n",
-                   "pipelined   (launch_hybrid_pipelined)");
+            if (err_seq >= 0.0f)
+                printf("    %-38s  max_err=%.2e  %s\n",
+                       "sequential  (launch_hybrid)",
+                       static_cast<double>(err_seq),
+                       (err_seq < tol) ? "PASS" : "FAIL");
+            if (err_pipe >= 0.0f) {
+                printf("    %-38s  max_err=%.2e  %s\n",
+                       "pipelined   (launch_hybrid_pipelined)",
+                       static_cast<double>(err_pipe),
+                       (err_pipe < tol) ? "PASS" : "FAIL");
+            } else {
+                printf("    %-38s  skipped (no heavy tasks)\n",
+                       "pipelined   (launch_hybrid_pipelined)");
+            }
+            if (hm_err >= 0.0f) {
+                printf("    %-38s  max_err=%.2e  %s\n",
+                       "paper_hm_kernel",
+                       static_cast<double>(hm_err),
+                       hm_ok ? "PASS" : "FAIL");
+            } else {
+                printf("    %-38s  skipped (non-square)\n",
+                       "paper_hm_kernel");
+            }
         }
     }
 
@@ -544,6 +693,15 @@ static bool run_test(const char* name,
     cudaFree(d_C_vals);
     if (d_partial) cudaFree(d_partial);
     if (d_ctrl)    cudaFree(d_ctrl);
+
+    /* HM baseline cleanup. */
+    cudaFree(d_hA_vals); cudaFree(d_hA_off);
+    cudaFree(d_hA_st);   cudaFree(d_hA_len);
+    cudaFree(d_hB_vals); cudaFree(d_hB_off);
+    cudaFree(d_hB_st);   cudaFree(d_hB_len);
+    cudaFree(d_hC_vals); cudaFree(d_hC_off);
+    cudaFree(d_hC_st);   cudaFree(d_hC_len);
+    cudaFree(d_hC_lkp);
 
     return all_ok;
 }
@@ -634,6 +792,64 @@ int main()
         auto A = make_diag_matrix(sz, sz, offs, 1.0f);
         auto B = make_diag_matrix(sz, sz, offs, 1.0f);
         all_pass &= run_test("all_diags_16x16", A, B, sz, sz, sz);
+    }
+
+    /* Test 9 — 1024×1024, heavy path, 30 diagonals */
+    {
+        constexpr int sz = 1024;
+        std::vector<int> oa, ob;
+        for (int d = -14; d <= 15; ++d) oa.push_back(d);
+        for (int d = -15; d <= 14; ++d) ob.push_back(d);
+        auto A = make_diag_matrix(sz, sz, oa, 1.0f);
+        auto B = make_diag_matrix(sz, sz, ob, 0.5f);
+        all_pass &= run_test("heavy_1024x1024_30diags", A, B, sz, sz, sz);
+    }
+
+    /* Test 10 — 2048×2048, heavy path, 64 diagonals */
+    {
+        constexpr int sz = 2048;
+        std::vector<int> oa, ob;
+        for (int d = -31; d <= 32; ++d) oa.push_back(d);
+        for (int d = -31; d <= 32; ++d) ob.push_back(d);
+        auto A = make_diag_matrix(sz, sz, oa, 1.0f);
+        auto B = make_diag_matrix(sz, sz, ob, 0.5f);
+        all_pass &= run_test("heavy_2048x2048_64diags", A, B, sz, sz, sz);
+    }
+
+    /* Test 11 — 4096×4096, heavy path, 64 diagonals, skip CPU check */
+    {
+        constexpr int sz = 4096;
+        std::vector<int> oa, ob;
+        for (int d = -31; d <= 32; ++d) oa.push_back(d);
+        for (int d = -31; d <= 32; ++d) ob.push_back(d);
+        auto A = make_diag_matrix(sz, sz, oa, 1.0f);
+        auto B = make_diag_matrix(sz, sz, ob, 0.5f);
+        all_pass &= run_test("heavy_4096x4096_64diags",
+                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
+    }
+
+    /* Test 12 — 8192×8192, heavy path, 64 diagonals, skip CPU check */
+    {
+        constexpr int sz = 8192;
+        std::vector<int> oa, ob;
+        for (int d = -31; d <= 32; ++d) oa.push_back(d);
+        for (int d = -31; d <= 32; ++d) ob.push_back(d);
+        auto A = make_diag_matrix(sz, sz, oa, 1.0f);
+        auto B = make_diag_matrix(sz, sz, ob, 0.5f);
+        all_pass &= run_test("heavy_8192x8192_64diags",
+                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
+    }
+
+    /* Test 13 — 16384×16384, heavy path, 64 diagonals, skip CPU check */
+    {
+        constexpr int sz = 16384;
+        std::vector<int> oa, ob;
+        for (int d = -31; d <= 32; ++d) oa.push_back(d);
+        for (int d = -31; d <= 32; ++d) ob.push_back(d);
+        auto A = make_diag_matrix(sz, sz, oa, 1.0f);
+        auto B = make_diag_matrix(sz, sz, ob, 0.5f);
+        all_pass &= run_test("large_16384x16384_64diags",
+                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
     }
 
     printf("\n============================================\n");
