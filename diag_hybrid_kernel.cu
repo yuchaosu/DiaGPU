@@ -347,14 +347,6 @@ static int hybrid_get_sm_count()
     return cached;
 }
 
-/* Round up num_blocks to a full GPU wave of min_blocks_per_sm CTAs. */
-static int hybrid_pad_to_wave(int num_blocks, int min_blocks_per_sm)
-{
-    if (num_blocks <= 0) return 0;
-    int wave = hybrid_get_sm_count() * min_blocks_per_sm;
-    if (wave <= 0) return num_blocks;
-    return ((num_blocks + wave - 1) / wave) * wave;
-}
 
 /* ============================================================
  * build_hybrid_plan
@@ -611,8 +603,7 @@ void launch_hybrid(HybridKernelArgs args, cudaStream_t stream)
 __global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S1, 4)
 hybrid_heavy_fused_kernel(HybridKernelArgs args, int* ctrl)
 {
-    const int tid    = static_cast<int>(threadIdx.x);
-    const int n_m_1  = args.n - 1;
+    const int tid = static_cast<int>(threadIdx.x);
 
     /* ctrl layout:  [s1_next | s2_claim | pending[0] ... pending[n_s2-1]] */
     int* const s1_next   = ctrl + 0;

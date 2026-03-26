@@ -280,7 +280,9 @@ static bool run_test(const char* name,
                      DiagMatrix A, DiagMatrix B,
                      int M, int K, int N,
                      float tol = 1e-3f,
-                     bool skip_cpu_check = false)
+                     bool skip_cpu_check = false,
+                     int corner_thresh  = -1,   /* -1 = auto */
+                     int pairs_per_part = -1)   /* -1 = auto */
 {
     printf("[%s] M=%d K=%d N=%d ...\n", name, M, K, N);  /* terminal progress */
     fprintf(g_out, "\n---\n\n## %s\n\n", name);
@@ -297,7 +299,8 @@ static bool run_test(const char* name,
         cpu_ms = cpu_reference(A, B, M, K, N, C_ref);
 
     /* ---- 2. Build hybrid plan. ---- */
-    HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
+    HybridPlan plan = build_hybrid_plan(A, B, M, K, N,
+                                        corner_thresh, pairs_per_part);
     fprintf(g_out, "**Plan:** corner\\_tasks=%zu  s1\\_tasks=%zu  s2\\_tasks=%zu"
             "  pairs=%zu  partial\\_buf=%d floats\n\n",
             plan.corner_tasks.size(), plan.s1_tasks.size(),
