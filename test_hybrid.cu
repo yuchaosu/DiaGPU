@@ -26,6 +26,8 @@
 #include "diag_hybrid_kernel.cuh"
 #include "paper_hm.cuh"
 
+#include <cuda_profiler_api.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -282,7 +284,8 @@ static bool run_test(const char* name,
                      float tol = 1e-3f,
                      bool skip_cpu_check = false,
                      int corner_thresh  = -1,   /* -1 = auto */
-                     int pairs_per_part = -1)   /* -1 = auto */
+                     int pairs_per_part = -1,   /* -1 = auto */
+                     bool profile       = false) /* wrap with cudaProfilerStart/Stop */
 {
     printf("[%s] M=%d K=%d N=%d ...\n", name, M, K, N);  /* terminal progress */
     fprintf(g_out, "\n---\n\n## %s\n\n", name);
@@ -407,9 +410,11 @@ static bool run_test(const char* name,
 
     TimingResult t_s1 = {};
     if (grid_s1 > 0) {
+        if (profile) cudaProfilerStart();
         t_s1 = measure_gpu([&] {
             hybrid_heavy_s1_kernel<<<grid_s1, HYBRID_BLOCK_HEAVY_S1>>>(kargs);
         });
+        if (profile) cudaProfilerStop();
     }
 
     TimingResult t_s2 = {};
@@ -431,9 +436,11 @@ static bool run_test(const char* name,
     /* ---- 8. End-to-end launch timings
      *         (includes kernel launch API overhead for all phases).
      * ---------------------------------------------------------------- */
+    if (profile) cudaProfilerStart();
     TimingResult t_seq = measure_gpu([&] {
         launch_hybrid(kargs);
     });
+    if (profile) cudaProfilerStop();
 
     TimingResult t_pipe = {};
     if (d_ctrl) {
@@ -851,7 +858,10 @@ int main()
                              A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
     }
 
-    /* Test 12 — 8192×8192, heavy path, 64 diagonals, skip CPU check */
+    /* Test 12 — 8192×8192, heavy path, 64 diagonals, skip CPU check.
+     * profile=true: wraps s1 and seq-launch measure_gpu with
+     * cudaProfilerStart/Stop so ncu --profile-from-start off captures
+     * only these runs. */
     {
         constexpr int sz = 8192;
         std::vector<int> oa, ob;
@@ -860,7 +870,9 @@ int main()
         auto A = make_diag_matrix(sz, sz, oa, 1.0f);
         auto B = make_diag_matrix(sz, sz, ob, 0.5f);
         all_pass &= run_test("heavy_8192x8192_64diags",
-                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true);
+                             A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true,
+                             /*corner_thresh=*/-1, /*pairs_per_part=*/-1,
+                             /*profile=*/true);
     }
 
     /* Test 13 — 16384×16384, heavy path, 64 diagonals, skip CPU check */
