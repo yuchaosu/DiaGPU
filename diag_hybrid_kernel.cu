@@ -1,24 +1,22 @@
 /* ============================================================
  * diag_hybrid_kernel.cu
  *
- * Implementation of the hybrid corner / heavy two-stage
- * diagonal sparse matrix multiplication kernel.
- *
+ * Unified C-centric diagonal SpMM kernel implementation.
  * See diag_hybrid_kernel.cuh for the full design description.
  *
- * Index arithmetic (shared with diag_kernel.cu):
+ * Index arithmetic:
  *
  *   For output diagonal dC, position k along the diagonal:
  *     row r  = c_sr + k        where c_sr = max(0, -dC)
  *     col c  = r + dC
  *
- *   A[dA] value at position k:
+ *   For A diagonal dA at row r:
  *     a_sr   = max(0, -dA)
- *     a_pos  = c_sr - a_sr + p_begin + tid   (relative to A diag start)
+ *     a_pos  = r - a_sr
  *
- *   B[dB] value at position k  (B is accessed at column = row of A_inner):
+ *   For B diagonal dB at inner dimension m = r + dA:
  *     b_sr   = max(0, -dB)
- *     b_pos  = c_sr + dA - b_sr + p_begin + tid
+ *     b_pos  = (r + dA) - b_sr
  *
  * ============================================================ */
 
@@ -26,310 +24,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <climits>
 #include <map>
 #include <numeric>
 #include <vector>
-
-/* ============================================================
- * Device helpers
- * ============================================================ */
-
-/* Binary search helpers (same as diag_kernel.cu). */
-__device__ __forceinline__ int
-hk_lower_bound(const int* __restrict__ arr, int n, int val)
-{
-    int lo = 0, hi = n;
-    while (lo < hi) {
-        int mid = (lo + hi) >> 1;
-        if (arr[mid] < val) lo = mid + 1;
-        else                hi = mid;
-    }
-    return lo;
-}
-
-__device__ __forceinline__ int
-hk_upper_bound(const int* __restrict__ arr, int n, int val)
-{
-    int lo = 0, hi = n;
-    while (lo < hi) {
-        int mid = (lo + hi) >> 1;
-        if (arr[mid] <= val) lo = mid + 1;
-        else                 hi = mid;
-    }
-    return lo;
-}
-
-/* Compute the valid position range [lo, hi) within a tile segment
- * [p_begin, p_begin+p_len) for one (dA, dB) contributor pair.
- *
- * Returns lo >= hi when the pair has no valid contribution to
- * this segment (occurs near matrix corners).
- *
- * Parameters:
- *   c_sr, p_begin, p_len  — tile descriptor
- *   a_sr, a_len           — A diagonal geometry
- *   d_a                   — diagonal offset of A (for b_pos formula)
- *   b_sr, b_len           — B diagonal geometry
- *
- * lo and hi are returned as offsets relative to p_begin (i.e., thread
- * tid is valid when lo <= tid < hi). */
-__device__ __forceinline__ void
-compute_overlap(int c_sr, int p_begin, int p_len,
-                int a_sr, int a_len,
-                int d_a,
-                int b_sr, int b_len,
-                int& lo, int& hi)
-{
-    /* a_pos = c_sr - a_sr + p_begin + tid  must be in [0, a_len) */
-    int a_base = c_sr - a_sr + p_begin;
-    int a_lo   = -a_base;                /* tid >= a_lo → a_pos >= 0     */
-    int a_hi   = a_len - a_base;         /* tid <  a_hi → a_pos < a_len  */
-
-    /* b_pos = c_sr + d_a - b_sr + p_begin + tid  must be in [0, b_len) */
-    int b_base = c_sr + d_a - b_sr + p_begin;
-    int b_lo   = -b_base;
-    int b_hi   = b_len - b_base;
-
-    lo = max(0,     max(a_lo, b_lo));
-    hi = min(p_len, min(a_hi, b_hi));
-}
-
-/* ============================================================
- * CORNER KERNEL  —  persistent, grid-stride
- *
- * Grid:   fixed occupancy-saturated size (num_SMs × 8).
- *         Each CTA iterates over its slice of corner_tasks[]
- *         with a grid-stride loop, eliminating per-task launch
- *         overhead regardless of how many corner tasks exist.
- *
- * Block:  HYBRID_BLOCK_CORNER threads (= HYBRID_TILE_CORNER).
- *
- * Each thread owns one output position (tid < p_len).
- * Threads outside the tile boundary participate in cooperative
- * shared-memory loads (keeping __syncthreads valid) but skip
- * the register accumulation and the final write.
- *
- * Shared memory (1 KB):
- *   smem_A[HYBRID_TILE_CORNER]  — staged A diagonal tile
- *   smem_B[HYBRID_TILE_CORNER]  — staged B diagonal tile
- *
- * Data reuse:
- *   A and B tiles for each pair are loaded collaboratively by
- *   all 128 threads in a single, fully coalesced transaction.
- *   Within a tile, each thread reuses its smem_A[tid] across
- *   all B diagonals that map to the same A row (structure-
- *   dependent; grouped automatically by sorted A-offset order).
- * ============================================================ */
-__global__ void __launch_bounds__(HYBRID_BLOCK_CORNER, 8)
-hybrid_corner_kernel(HybridKernelArgs args)
-{
-    const int tid    = static_cast<int>(threadIdx.x);
-    const int stride = static_cast<int>(gridDim.x);
-    const int n_m_1  = args.n - 1;
-
-    __shared__ float smem_A[HYBRID_TILE_CORNER];
-    __shared__ float smem_B[HYBRID_TILE_CORNER];
-
-    /* Grid-stride loop: each CTA processes multiple tasks. */
-    for (int bid = static_cast<int>(blockIdx.x);
-         bid < args.n_corner;
-         bid += stride)
-    {
-        const HybridCornerTask task = args.corner_tasks[bid];
-        const bool active = (tid < task.p_len);
-
-        const int d_c     = task.c_offset;
-        const int c_sr    = (d_c >= 0) ? 0 : -d_c;
-        const int p_begin = task.p_begin;
-
-        float acc = 0.0f;
-
-        for (int ai = task.ai_begin; ai < task.ai_end; ++ai) {
-            const int d_a = args.A_offsets[ai];
-            const int d_b = d_c - d_a;
-
-            /* Skip if B does not have this diagonal. */
-            const int bi = args.B_lookup[d_b + n_m_1];
-            if (bi < 0) continue;
-
-            /* ---- Collaborative load: A tile ---- */
-            {
-                const int a_sr  = (d_a >= 0) ? 0 : -d_a;
-                const int a_pos = c_sr - a_sr + p_begin + tid;
-                smem_A[tid] = (a_pos >= 0 && a_pos < args.A_lengths[ai])
-                            ? args.A_vals[args.A_starts[ai] + a_pos]
-                            : 0.0f;
-            }
-
-            /* ---- Collaborative load: B tile ---- */
-            {
-                const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                const int b_pos = c_sr + d_a - b_sr + p_begin + tid;
-                smem_B[tid] = (b_pos >= 0 && b_pos < args.B_lengths[bi])
-                            ? args.B_vals[args.B_starts[bi] + b_pos]
-                            : 0.0f;
-            }
-
-            /* Ensure both tiles are visible to all threads before use. */
-            __syncthreads();
-
-            /* Register accumulation — only active threads contribute. */
-            if (active) {
-                acc += smem_A[tid] * smem_B[tid];
-            }
-
-            /* Sync before next iteration overwrites smem. */
-            __syncthreads();
-        }
-
-        /* Direct write (exclusive tile ownership — no atomics). */
-        if (active) {
-            const HybridCDiag cd = args.c_diags[task.c_idx];
-            args.C_vals[cd.values_start + p_begin + tid] = acc;
-        }
-        /* No sync needed between grid-stride iterations: smem is
-         * fully rewritten at the top of the next task's pair loop. */
-    }
-}
-
-/* ============================================================
- * HEAVY STAGE-1 KERNEL  —  persistent, grid-stride
- *
- * Grid:   fixed occupancy-saturated size (num_SMs × 4).
- *         Each CTA iterates over its slice of s1_tasks[] with
- *         a grid-stride loop.  All threads in the block must
- *         participate in every task iteration so that the
- *         __syncthreads calls inside the pair loop remain valid.
- *
- * Block:  HYBRID_BLOCK_HEAVY_S1 threads (= HYBRID_TILE_HEAVY).
- *
- * Each block handles one (c_diag, segment, pair-partition) and
- * writes its partial sum to an exclusive slot in partial_buf.
- *
- * Shared memory layout (4 KB with TILE=256):
- *   smem_A[HYBRID_TILE_HEAVY]  — current A tile
- *   smem_B[HYBRID_TILE_HEAVY]  — current B tile
- *
- * Future optimisation: replace the global→smem loads with
- * cp.async (Ampere+) to pipeline pair[i+1] loads with the
- * MAC computation for pair[i].
- * ============================================================ */
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S1, 4)
-hybrid_heavy_s1_kernel(HybridKernelArgs args)
-{
-    const int tid    = static_cast<int>(threadIdx.x);
-    const int stride = static_cast<int>(gridDim.x);
-
-    __shared__ float smem_A[HYBRID_TILE_HEAVY];
-    __shared__ float smem_B[HYBRID_TILE_HEAVY];
-
-    /* Grid-stride loop: each CTA processes multiple s1 tasks.
-     * ALL threads enter every iteration so __syncthreads is valid. */
-    for (int bid = static_cast<int>(blockIdx.x);
-         bid < args.n_s1;
-         bid += stride)
-    {
-        const HybridS1Task task = args.s1_tasks[bid];
-        const bool active = (tid < task.p_len);
-
-        const int d_c     = task.c_offset;
-        const int c_sr    = (d_c >= 0) ? 0 : -d_c;
-        const int p_begin = task.p_begin;
-
-        float acc = 0.0f;
-
-        for (int pi = 0; pi < task.pair_count; ++pi) {
-            const HybridPair pe = args.pairs[task.pair_begin + pi];
-            const int ai  = pe.ai;
-            const int bi  = pe.bi;
-            const int d_a = args.A_offsets[ai];
-            const int d_b = args.B_offsets[bi];
-
-            /* ---- Collaborative load: A tile ---- */
-            {
-                const int a_sr  = (d_a >= 0) ? 0 : -d_a;
-                const int a_pos = c_sr - a_sr + p_begin + tid;
-                smem_A[tid] = (a_pos >= 0 && a_pos < args.A_lengths[ai])
-                            ? args.A_vals[args.A_starts[ai] + a_pos]
-                            : 0.0f;
-            }
-
-            /* ---- Collaborative load: B tile ---- */
-            {
-                const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                const int b_pos = c_sr + d_a - b_sr + p_begin + tid;
-                smem_B[tid] = (b_pos >= 0 && b_pos < args.B_lengths[bi])
-                            ? args.B_vals[args.B_starts[bi] + b_pos]
-                            : 0.0f;
-            }
-
-            __syncthreads();
-
-            if (active) {
-                acc += smem_A[tid] * smem_B[tid];
-            }
-
-            /* Sync before next pair iteration overwrites smem. */
-            __syncthreads();
-        }
-
-        /* Write partial sum to exclusive slot (no atomics). */
-        if (active) {
-            args.partial_buf[task.partial_offset + tid] = acc;
-        }
-        /* No extra sync needed between grid-stride iterations:
-         * smem is fully rewritten at the start of the next task. */
-    }
-}
-
-/* ============================================================
- * HEAVY STAGE-2 REDUCE KERNEL  —  persistent, grid-stride
- *
- * Grid:   fixed occupancy-saturated size (num_SMs × 4).
- *         Each CTA iterates over its slice of s2_tasks[] with
- *         a grid-stride loop.
- *
- * Block:  HYBRID_BLOCK_HEAVY_S2 threads (= HYBRID_TILE_HEAVY).
- *
- * No shared memory or __syncthreads: each thread independently
- * reduces its scalar position across all partial slots and
- * writes the final value to C_vals.  Threads outside p_len
- * simply skip both the reduction and the write.
- *
- * Ordering guarantee: stage-2 is enqueued on the same CUDA
- * stream as stage-1, so the runtime guarantees all stage-1
- * writes to partial_buf are globally visible before any
- * stage-2 thread reads them.
- * ============================================================ */
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S2, 4)
-hybrid_heavy_s2_reduce_kernel(HybridKernelArgs args)
-{
-    const int tid    = static_cast<int>(threadIdx.x);
-    const int stride = static_cast<int>(gridDim.x);
-
-    /* Grid-stride loop: no __syncthreads → safe to skip inactive
-     * threads individually inside each iteration. */
-    for (int bid = static_cast<int>(blockIdx.x);
-         bid < args.n_s2;
-         bid += stride)
-    {
-        const HybridS2Task task = args.s2_tasks[bid];
-
-        if (tid < task.p_len) {
-            float sum = 0.0f;
-
-            #pragma unroll 4
-            for (int p = 0; p < task.num_partials; ++p) {
-                sum += args.partial_buf[task.partial_offset
-                                        + p * HYBRID_TILE_HEAVY
-                                        + tid];
-            }
-
-            const HybridCDiag cd = args.c_diags[task.c_idx];
-            args.C_vals[cd.values_start + task.p_begin + tid] = sum;
-        }
-    }
-}
 
 /* ============================================================
  * HOST HELPERS
@@ -347,160 +45,544 @@ static int hybrid_get_sm_count()
     return cached;
 }
 
+/* ============================================================
+ * COMPUTATION KERNEL  —  persistent, grid-stride
+ *
+ * Each CTA claims one HybridTask (= one group × one A-partition)
+ * via grid-stride.  It iterates tile positions p_begin over the
+ * longest C diagonal in the group.
+ *
+ * Optimisations implemented:
+ *   1. Double-buffered A preload — next tile's A loads overlap
+ *      with current tile's computation via cp.async.
+ *   2. B load ILP — HYBRID_A_UNROLL (=4) A diagonals are
+ *      processed simultaneously so multiple B loads are in
+ *      flight, saturating the memory pipeline.
+ *   3. Vectorised A loads — float4 (128-bit) loads in Phase 1
+ *      reduce load instruction count 4×.  chunk is padded to
+ *      a multiple of 4 to guarantee alignment.
+ *
+ * Future optimisations (not yet implemented):
+ *   4. L2 cache residency hints — pin B_vals in L2 with
+ *      cudaAccessPropertyPersisting on the stream's access
+ *      policy window.  Beneficial when B fits in L2 (50 MB
+ *      on H100).
+ *   5. Thread block clusters (Hopper) — CTAs in a cluster
+ *      share A data across groups via distributed shared
+ *      memory (dsmem), eliminating redundant A loads at
+ *      group boundaries.
+ *   6. Warp shuffle for spread=0 — when all C diagonals in
+ *      the group are positive (c_sr=0, spread=0), every
+ *      thread reads its own A value.  Shared memory can be
+ *      bypassed entirely; A lives in a register.  Check
+ *      spread==0 and branch to a fast path.
+ *
+ * Shared memory layout (dynamic, double-buffered):
+ *   buf 0: smem[0 .. a_count*chunk - 1]
+ *   buf 1: smem[a_count*chunk .. 2*a_count*chunk - 1]
+ *   chunk is 4-aligned for float4 loads.
+ *   Total = 2 * task.a_count * chunk floats.
+ * ============================================================ */
+
+/* cp.async helpers (Ampere+, sm_80). */
+__device__ __forceinline__ void
+cp_async_f32(float* __restrict__ dst, const float* __restrict__ src)
+{
+    /* Copy 4 bytes from global to shared memory asynchronously.
+     * Falls back to a regular load on pre-Ampere. */
+#if __CUDA_ARCH__ >= 800
+    uint32_t dst_addr = static_cast<uint32_t>(
+        __cvta_generic_to_shared(dst));
+    asm volatile(
+        "cp.async.ca.shared.global [%0], [%1], 4;\n"
+        :: "r"(dst_addr), "l"(src));
+#else
+    *dst = *src;
+#endif
+}
+
+__device__ __forceinline__ void cp_async_commit()
+{
+#if __CUDA_ARCH__ >= 800
+    asm volatile("cp.async.commit_group;\n");
+#endif
+}
+
+__device__ __forceinline__ void cp_async_wait_all()
+{
+#if __CUDA_ARCH__ >= 800
+    asm volatile("cp.async.wait_all;\n");
+#else
+    __threadfence_block();
+#endif
+}
+
+template <bool DIRECT>
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_compute_kernel(HybridKernelArgs args)
+{
+    const int tid = static_cast<int>(threadIdx.x);
+    const int blb = args.b_lookup_base; /* extended B_lookup: no bounds check needed */
+
+    extern __shared__ float smem[];
+
+    for (int task_id = static_cast<int>(blockIdx.x);
+         task_id < args.n_tasks;
+         task_id += static_cast<int>(gridDim.x))
+    {
+        const HybridTask task = args.tasks[task_id];
+        /* chunk is 4-aligned (host ensures this via HYBRID_MAX_CHUNK). */
+        const int chunk_raw = HYBRID_TILE + task.spread;
+        const int chunk     = (chunk_raw + 3) & ~3;
+        const int buf_floats = task.a_count * chunk;
+        /* Double-buffer pointers. */
+        float* buf[2] = { smem, smem + buf_floats };
+
+        /* Load C diagonal metadata into registers. */
+        int c_offset[HYBRID_DIAGS_PER_CTA];
+        int c_sr[HYBRID_DIAGS_PER_CTA];
+        int c_len[HYBRID_DIAGS_PER_CTA];
+        int c_start[HYBRID_DIAGS_PER_CTA];
+
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+            if (ki < task.c_count) {
+                const HybridCDiag cd = args.c_diags[task.c_begin + ki];
+                c_offset[ki] = cd.c_offset;
+                c_sr[ki]     = cd.c_sr;
+                c_len[ki]    = cd.length;
+                c_start[ki]  = cd.values_start;
+            }
+        }
+
+        /* ============================================================
+         * Macro: issue cp.async loads for one tile into buf[b].
+         * Uses float4 (128-bit) loads where possible, scalar for tail.
+         * ============================================================ */
+        #define LOAD_A_TILE(b, p_begin_val)                              \
+        do {                                                             \
+            for (int s = 0; s < task.a_count; ++s) {                     \
+                const int ai   = args.a_contrib[task.a_begin + s];       \
+                const int d_a  = args.A_offsets[ai];                     \
+                const int a_sr = (d_a >= 0) ? 0 : -d_a;                 \
+                const int base = task.min_c_sr - a_sr + (p_begin_val);   \
+                const int a_len = args.A_lengths[ai];                    \
+                const int a_start = args.A_starts[ai];                   \
+                float* dst_base = buf[(b)] + s * chunk;                  \
+                /* Float4 vectorised path (tid indexes float4 slots). */ \
+                const int chunk4 = chunk >> 2;                           \
+                for (int j = tid; j < chunk4; j += HYBRID_BLOCK) {       \
+                    const int i0 = j << 2;                               \
+                    float4 v;                                            \
+                    int p0 = base + i0;                                  \
+                    v.x = (p0   >= 0 && p0   < a_len)                   \
+                        ? args.A_vals[a_start + p0]   : 0.0f;           \
+                    v.y = (p0+1 >= 0 && p0+1 < a_len)                   \
+                        ? args.A_vals[a_start + p0+1] : 0.0f;           \
+                    v.z = (p0+2 >= 0 && p0+2 < a_len)                   \
+                        ? args.A_vals[a_start + p0+2] : 0.0f;           \
+                    v.w = (p0+3 >= 0 && p0+3 < a_len)                   \
+                        ? args.A_vals[a_start + p0+3] : 0.0f;           \
+                    *reinterpret_cast<float4*>(dst_base + i0) = v;       \
+                }                                                        \
+            }                                                            \
+            cp_async_commit();                                           \
+        } while (0)
+
+        /* ============================================================
+         * Double-buffered tile loop.
+         *
+         * Iteration 0: load tile 0 into buf[0], wait, compute tile 0.
+         * Iteration i>0: load tile i into buf[cur], compute tile i-1
+         *                from buf[1-cur], wait for buf[cur].
+         * After loop: compute the last tile.
+         * ============================================================ */
+        const int n_tiles = (task.max_c_len + HYBRID_TILE - 1) / HYBRID_TILE;
+        int cur = 0;
+
+        /* Preload first tile. */
+        if (n_tiles > 0) {
+            LOAD_A_TILE(0, 0);
+            cp_async_wait_all();
+            __syncthreads();
+        }
+
+        for (int tile = 0; tile < n_tiles; ++tile) {
+            const int p_begin = tile * HYBRID_TILE;
+
+            /* Kick off async load for the NEXT tile into the other
+             * buffer while we compute the current tile. */
+            if (tile + 1 < n_tiles) {
+                LOAD_A_TILE(1 - cur, (tile + 1) * HYBRID_TILE);
+            }
+
+            /* ---- Phase 2: accumulate (A from smem, B from register).
+             *
+             * Branch reduction:
+             *   - active[ki]: precomputed mask merges c_count + c_len checks
+             *   - B_lookup is extended (size 4N-3): no index bounds check
+             *   - b_pos is clamped; invalid → multiply by 0 (predicated)
+             *
+             * Only remaining branch: if (bi < 0) — fundamental sparsity.
+             *
+             * ILP: HYBRID_A_UNROLL A diagonals processed together so
+             * multiple B loads are in flight simultaneously.            */
+
+            /* Precompute active mask for this tile. */
+            bool active[HYBRID_DIAGS_PER_CTA];
+            #pragma unroll
+            for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+                active[ki] = (ki < task.c_count)
+                           && (p_begin + tid < c_len[ki]);
+
+            float acc[HYBRID_DIAGS_PER_CTA];
+            #pragma unroll
+            for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+                acc[ki] = 0.0f;
+
+            float* cur_buf = buf[cur];
+            const int a_count = task.a_count;
+            const int a_begin = task.a_begin;
+            const int a_main = a_count & ~(HYBRID_A_UNROLL - 1);
+
+            /* Main loop: groups of HYBRID_A_UNROLL A diagonals. */
+            for (int s = 0; s < a_main; s += HYBRID_A_UNROLL) {
+                int   da_g[HYBRID_A_UNROLL];
+                float av_g[HYBRID_A_UNROLL][HYBRID_DIAGS_PER_CTA];
+
+                #pragma unroll
+                for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
+                    const int ai = args.a_contrib[a_begin + s + u];
+                    da_g[u] = args.A_offsets[ai];
+                    #pragma unroll
+                    for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                        const int off = c_sr[ki] - task.min_c_sr + tid;
+                        av_g[u][ki] = cur_buf[(s + u) * chunk + off];
+                    }
+                }
+
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                    if (!active[ki]) continue;  /* single branch */
+                    #pragma unroll
+                    for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
+                        const int bi = args.B_lookup[
+                            c_offset[ki] - da_g[u] + blb];
+                        if (bi < 0) continue;  /* sparsity check */
+
+                        const int d_b   = c_offset[ki] - da_g[u];
+                        const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                        const int b_len = args.B_lengths[bi];
+                        const int b_pos =
+                            (c_sr[ki] + p_begin + tid + da_g[u])
+                            - b_sr;
+                        /* Clamp + predicate: no branch for bounds. */
+                        const int safe  = max(0, min(b_pos, b_len - 1));
+                        const float mask = (b_pos >= 0 && b_pos < b_len)
+                                         ? 1.0f : 0.0f;
+                        acc[ki] += av_g[u][ki]
+                                 * args.B_vals[args.B_starts[bi] + safe]
+                                 * mask;
+                    }
+                }
+            }
+
+            /* Remainder: leftover A diagonals (< HYBRID_A_UNROLL). */
+            for (int s = a_main; s < a_count; ++s) {
+                const int ai  = args.a_contrib[a_begin + s];
+                const int d_a = args.A_offsets[ai];
+
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                    if (!active[ki]) continue;
+
+                    const float a_val = cur_buf[
+                        s * chunk + c_sr[ki] - task.min_c_sr + tid];
+                    const int bi = args.B_lookup[
+                        c_offset[ki] - d_a + blb];
+                    if (bi < 0) continue;
+
+                    const int d_b   = c_offset[ki] - d_a;
+                    const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                    const int b_len = args.B_lengths[bi];
+                    const int b_pos =
+                        (c_sr[ki] + p_begin + tid + d_a) - b_sr;
+                    const int safe  = max(0, min(b_pos, b_len - 1));
+                    const float mask = (b_pos >= 0 && b_pos < b_len)
+                                     ? 1.0f : 0.0f;
+                    acc[ki] += a_val
+                             * args.B_vals[args.B_starts[bi] + safe]
+                             * mask;
+                }
+            }
+
+            /* ---- Phase 3: write (active mask reused).
+             * Template-specialized: DIRECT → C_vals, !DIRECT → partial_buf.
+             * No runtime branch — compiler eliminates the dead path. ---- */
+            if constexpr (DIRECT) {
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+                    if (active[ki])
+                        args.C_vals[c_start[ki] + p_begin + tid] =
+                            acc[ki];
+            } else {
+                const int padded =
+                    (task.max_c_len + HYBRID_TILE - 1)
+                    / HYBRID_TILE * HYBRID_TILE;
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+                    if (active[ki])
+                        args.partial_buf[task.out_offset
+                                         + ki * padded
+                                         + p_begin + tid] =
+                            acc[ki];
+            }
+
+            /* Wait for the next tile's async A loads, then sync. */
+            if (tile + 1 < n_tiles) {
+                cp_async_wait_all();
+                __syncthreads();
+            }
+            cur = 1 - cur;
+        }
+
+        #undef LOAD_A_TILE
+
+        /* Sync before next grid-stride task. */
+        __syncthreads();
+    }
+}
+
+/* Explicit instantiations. */
+template __global__ void hybrid_compute_kernel<true>(HybridKernelArgs);
+template __global__ void hybrid_compute_kernel<false>(HybridKernelArgs);
+
+/* ============================================================
+ * REDUCTION KERNEL  —  persistent, grid-stride
+ *
+ * Sums partial_buf partitions → C_vals for heavy groups.
+ * Each CTA claims one HybridReduceTask and iterates tiles.
+ * No shared memory needed — each thread independently reduces
+ * its position across all partitions.
+ * ============================================================ */
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_reduce_kernel(HybridKernelArgs args)
+{
+    const int tid = static_cast<int>(threadIdx.x);
+
+    for (int task_id = static_cast<int>(blockIdx.x);
+         task_id < args.n_reduce;
+         task_id += static_cast<int>(gridDim.x))
+    {
+        const HybridReduceTask rt = args.reduce_tasks[task_id];
+
+        /* Load C diagonal metadata. */
+        int c_len[HYBRID_DIAGS_PER_CTA];
+        int c_start[HYBRID_DIAGS_PER_CTA];
+
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+            if (ki < rt.c_count) {
+                const HybridCDiag cd = args.c_diags[rt.c_begin + ki];
+                c_len[ki]   = cd.length;
+                c_start[ki] = cd.values_start;
+            }
+        }
+
+        const int padded =
+            (rt.max_c_len + HYBRID_TILE - 1) / HYBRID_TILE * HYBRID_TILE;
+        const int partition_stride =
+            rt.c_count * padded;  // floats per partition
+
+        for (int p_begin = 0; p_begin < rt.max_c_len;
+             p_begin += HYBRID_TILE)
+        {
+            #pragma unroll
+            for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                if (ki >= rt.c_count) break;
+                if (p_begin + tid >= c_len[ki]) continue;
+
+                float sum = 0.0f;
+                for (int p = 0; p < rt.num_partials; ++p) {
+                    sum += args.partial_buf[rt.partial_base
+                                            + p * partition_stride
+                                            + ki * padded
+                                            + p_begin + tid];
+                }
+                args.C_vals[c_start[ki] + p_begin + tid] = sum;
+            }
+        }
+    }
+}
 
 /* ============================================================
  * build_hybrid_plan
  *
- * Host-side preprocessing that produces all task tables and
- * pair lists consumed by the three kernels.
+ * Host-side preprocessing.
  *
- * Requires A.offsets to be sorted ascending
- * (call sort_diag_matrix_by_offset before invoking this).
- *
- * Partial buffer layout:
- *   For heavy output diagonal dC with C segments S0, S1, ...
- *   and num_partitions = ceil(num_pairs / HYBRID_PAIRS_PER_PART):
- *
- *     base[S_i] = sum of (num_partitions * HYBRID_TILE_HEAVY)
- *                 for all segments before S_i (within dC)
- *                 PLUS the base of dC itself in partial_buf.
- *
- *   partial_buf[base[S_i] + p * HYBRID_TILE_HEAVY + tid]
- *     is the partial sum written by stage-1 partition p,
- *     thread tid, for segment S_i.
+ * 1. Enumerate output diagonals and build c_diags[].
+ * 2. Group consecutive c_diags into groups of K.
+ * 3. For each group, find contributing A diagonals.
+ * 4. If all A diags fit in smem → corner (1 task, direct write).
+ *    Else → heavy (P partition tasks + 1 reduce task).
  * ============================================================ */
 HybridPlan build_hybrid_plan(const DiagMatrix& A,
                               const DiagMatrix& B,
-                              int M, int K, int N,
-                              int corner_thresh,
-                              int pairs_per_part)
+                              int M, int K_dim, int N)
 {
     HybridPlan plan;
 
-    /* Step 1 — enumerate output diagonals and contributor pairs. */
+    /* Step 1 — enumerate output diagonals and contributors. */
     auto out_map = build_output_diagonals(A, B, M, N);
     build_contributors(out_map, A, B);
 
-    /* Precompute B offset bounds for the A-range binary search. */
-    int B_off_min = *std::min_element(B.offsets.begin(), B.offsets.end());
-    int B_off_max = *std::max_element(B.offsets.begin(), B.offsets.end());
-
-    /* Resolve auto parameters (-1 = use compile-time defaults). */
-    if (corner_thresh  < 0) corner_thresh  = HYBRID_CORNER_THRESH;
-    if (pairs_per_part < 0) pairs_per_part = HYBRID_PAIRS_PER_PART;
-
     /* Step 2 — build c_diags table. */
     int c_val_offset = 0;
-    std::map<int, int> c_idx_map;
     for (auto& [d_c, info] : out_map) {
         if (info.contributors.empty()) continue;
-        int idx = static_cast<int>(plan.c_diags.size());
-        c_idx_map[d_c] = idx;
         HybridCDiag cd;
-        cd.c_offset    = d_c;
-        cd.c_sr        = (d_c >= 0) ? 0 : -d_c;
-        cd.length      = info.c_length;
+        cd.c_offset     = d_c;
+        cd.c_sr         = (d_c >= 0) ? 0 : -d_c;
+        cd.length       = info.c_length;
         cd.values_start = c_val_offset;
         plan.c_diags.push_back(cd);
         c_val_offset += info.c_length;
     }
     plan.total_c_values = c_val_offset;
 
-    /* Step 3 — tile each output diagonal and emit tasks. */
+    const int n_c = static_cast<int>(plan.c_diags.size());
+    const int n_m_1 = N - 1;  /* for B_lookup indexing */
+
+    /* Host-side B lookup table: b_lookup[d_b + n_m_1] → bi, or -1. */
+    std::vector<int> b_lookup = build_b_diag_lookup(B, N);
+
+    /* Step 3 — group consecutive C diagonals, classify, emit tasks. */
     int partial_offset = 0;
+    plan.corner_max_smem = 0;
+    plan.heavy_max_smem  = 0;
 
-    for (auto& [d_c, info] : out_map) {
-        if (info.contributors.empty()) continue;
-        int c_idx     = c_idx_map[d_c];
-        int num_pairs = static_cast<int>(info.contributors.size());
-        /* Route to heavy only when BOTH conditions hold:
-         *   1. many contributor pairs  → pair-partition parallelism needed
-         *   2. long diagonal           → enough segments to amortise partial_buf
-         * Short diagonals go corner regardless of pair count: their total
-         * work is bounded by length, so sequential pair looping is cheaper
-         * than the partial_buf round-trip.                                  */
-        bool is_heavy = (num_pairs > corner_thresh)
-                     && (info.c_length > HYBRID_TILE_HEAVY);
+    for (int g_base = 0; g_base < n_c;
+         g_base += HYBRID_DIAGS_PER_CTA)
+    {
+        const int g_end = std::min(g_base + HYBRID_DIAGS_PER_CTA, n_c);
+        const int g_count = g_end - g_base;
 
-        if (!is_heavy) {
-            /* ---- Corner path ---- */
-            /* Precompute the valid A-diagonal index range once per dC. */
-            int d_a_lo  = d_c - B_off_max;
-            int d_a_hi  = d_c - B_off_min;
-            int ai_begin = static_cast<int>(
-                std::lower_bound(A.offsets.begin(), A.offsets.end(), d_a_lo)
-                - A.offsets.begin());
-            int ai_end   = static_cast<int>(
-                std::upper_bound(A.offsets.begin(), A.offsets.end(), d_a_hi)
-                - A.offsets.begin());
+        /* Compute group geometry. */
+        int min_c_sr  = INT_MAX;
+        int max_c_sr  = 0;
+        int max_c_len = 0;
+        for (int ki = 0; ki < g_count; ++ki) {
+            const HybridCDiag& cd = plan.c_diags[g_base + ki];
+            min_c_sr  = std::min(min_c_sr, cd.c_sr);
+            max_c_sr  = std::max(max_c_sr, cd.c_sr);
+            max_c_len = std::max(max_c_len, cd.length);
+        }
+        const int spread = max_c_sr - min_c_sr;
+        const int chunk  = ((HYBRID_TILE + spread) + 3) & ~3; /* 4-aligned for float4 */
 
-            for (int p = 0; p < info.c_length; p += HYBRID_TILE_CORNER) {
-                int p_len = std::min(HYBRID_TILE_CORNER, info.c_length - p);
-
-                HybridCornerTask task;
-                task.c_idx    = c_idx;
-                task.c_offset = d_c;
-                task.p_begin  = p;
-                task.p_len    = p_len;
-                task.ai_begin = ai_begin;
-                task.ai_end   = ai_end;
-                plan.corner_tasks.push_back(task);
-            }
-        } else {
-            /* ---- Heavy path ---- */
-
-            /* Append this diagonal's pairs to the global pair list. */
-            int pairs_base = static_cast<int>(plan.pairs.size());
-            for (const auto& cp : info.contributors) {
-                HybridPair hp;
-                hp.ai = cp.a_diag_idx;
-                hp.bi = cp.b_diag_idx;
-                plan.pairs.push_back(hp);
-            }
-
-            int num_partitions = (num_pairs + pairs_per_part - 1)
-                                 / pairs_per_part;
-
-            for (int p = 0; p < info.c_length; p += HYBRID_TILE_HEAVY) {
-                int p_len = std::min(HYBRID_TILE_HEAVY, info.c_length - p);
-
-                /* Base offset in partial_buf for this (c_diag, segment). */
-                int seg_partial_base = partial_offset;
-
-                /* Stage-2 task index (emitted first so s1 tasks can
-                 * reference it via s2_task_idx for the fused kernel). */
-                int s2_idx = static_cast<int>(plan.s2_tasks.size());
-
-                HybridS2Task t2;
-                t2.c_idx          = c_idx;
-                t2.p_begin        = p;
-                t2.p_len          = p_len;
-                t2.partial_offset = seg_partial_base;
-                t2.num_partials   = num_partitions;
-                plan.s2_tasks.push_back(t2);
-
-                /* Stage-1 task per pair partition. */
-                for (int part = 0; part < num_partitions; ++part) {
-                    int pairs_begin = pairs_base + part * pairs_per_part;
-                    int pairs_count = std::min(pairs_per_part,
-                                               num_pairs - part * pairs_per_part);
-
-                    HybridS1Task t1;
-                    t1.c_idx           = c_idx;
-                    t1.c_offset        = d_c;
-                    t1.p_begin         = p;
-                    t1.p_len           = p_len;
-                    t1.pair_begin      = pairs_begin;
-                    t1.pair_count      = pairs_count;
-                    t1.partial_offset  = seg_partial_base
-                                       + part * HYBRID_TILE_HEAVY;
-                    t1.s2_task_idx     = s2_idx;
-                    plan.s1_tasks.push_back(t1);
+        /* Find contributing A diagonals for this group:
+         * ai contributes if any C diagonal in the group has a valid
+         * B partner for d_b = c_offset[ki] - A_offsets[ai]. */
+        std::vector<int> group_a_indices;
+        for (int ai = 0; ai < static_cast<int>(A.offsets.size()); ++ai) {
+            const int d_a = A.offsets[ai];
+            bool used = false;
+            for (int ki = 0; ki < g_count && !used; ++ki) {
+                const int d_b = plan.c_diags[g_base + ki].c_offset - d_a;
+                const int b_idx = d_b + n_m_1;
+                if (b_idx >= 0 && b_idx < 2 * N - 1
+                    && b_lookup[b_idx] >= 0) {
+                    used = true;
                 }
-
-                /* Advance partial_buf pointer past this segment's slots. */
-                partial_offset += num_partitions * HYBRID_TILE_HEAVY;
             }
+            if (used) group_a_indices.push_back(ai);
+        }
+
+        const int total_a = static_cast<int>(group_a_indices.size());
+        /* Double-buffered: need 2 × a_count × chunk floats. */
+        const int smem_bytes  = 2 * total_a * chunk
+                                * static_cast<int>(sizeof(float));
+
+        const bool fits = (smem_bytes <= HYBRID_SMEM_BUDGET);
+
+        if (fits) {
+            /* ---- Corner group: 1 task, direct write ---- */
+            const int a_base = static_cast<int>(plan.a_contrib.size());
+            for (int ai : group_a_indices)
+                plan.a_contrib.push_back(ai);
+
+            HybridTask t;
+            t.c_begin    = g_base;
+            t.c_count    = g_count;
+            t.min_c_sr   = min_c_sr;
+            t.spread     = spread;
+            t.max_c_len  = max_c_len;
+            t.a_begin    = a_base;
+            t.a_count    = total_a;
+            t.is_direct  = 1;
+            t.out_offset = 0;  /* unused for direct */
+            plan.corner_tasks.push_back(t);
+
+            plan.corner_max_smem = std::max(plan.corner_max_smem, smem_bytes);
+
+        } else {
+            /* ---- Heavy group: partition A contributors ---- */
+            /* Half the budget per buffer (double-buffered). */
+            const int max_a_per_part =
+                HYBRID_SMEM_BUDGET / (2 * chunk * static_cast<int>(sizeof(float)));
+            const int n_partitions =
+                (total_a + max_a_per_part - 1) / max_a_per_part;
+
+            /* partial_buf layout for this group:
+             *   partition p, C diagonal ki, position pos →
+             *   partial_buf[group_base
+             *               + p * (c_count * padded)
+             *               + ki * padded + pos]
+             * where padded = ceil(max_c_len / TILE) * TILE. */
+            const int padded =
+                (max_c_len + HYBRID_TILE - 1) / HYBRID_TILE * HYBRID_TILE;
+            const int partition_stride = g_count * padded;
+            const int group_partial_base = partial_offset;
+
+            for (int part = 0; part < n_partitions; ++part) {
+                const int a_off   = part * max_a_per_part;
+                const int a_count = std::min(max_a_per_part,
+                                              total_a - a_off);
+                const int a_base =
+                    static_cast<int>(plan.a_contrib.size());
+                for (int j = 0; j < a_count; ++j)
+                    plan.a_contrib.push_back(group_a_indices[a_off + j]);
+
+                HybridTask t;
+                t.c_begin    = g_base;
+                t.c_count    = g_count;
+                t.min_c_sr   = min_c_sr;
+                t.spread     = spread;
+                t.max_c_len  = max_c_len;
+                t.a_begin    = a_base;
+                t.a_count    = a_count;
+                t.is_direct  = 0;
+                t.out_offset = group_partial_base
+                               + part * partition_stride;
+                plan.heavy_tasks.push_back(t);
+
+                const int part_smem =
+                    2 * a_count * chunk * static_cast<int>(sizeof(float));
+                plan.heavy_max_smem = std::max(plan.heavy_max_smem, part_smem);
+            }
+
+            partial_offset += n_partitions * partition_stride;
+
+            /* Reduction task for this group. */
+            HybridReduceTask rt;
+            rt.c_begin      = g_base;
+            rt.c_count      = g_count;
+            rt.min_c_sr     = min_c_sr;
+            rt.spread       = spread;
+            rt.max_c_len    = max_c_len;
+            rt.partial_base = group_partial_base;
+            rt.num_partials = n_partitions;
+            plan.reduce_tasks.push_back(rt);
         }
     }
 
@@ -509,348 +591,63 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
 }
 
 /* ============================================================
- * launch_hybrid  —  persistent-kernel edition
+ * launch_hybrid
  *
- * Each kernel is launched with a fixed, occupancy-saturated grid
- * (num_SMs × min_blocks_per_SM), regardless of task count.
- * The CTAs iterate through their task slices via grid-stride
- * loops, so there are always exactly 3 kernel launches with
- * constant overhead even for 100 000+ tasks.
+ * Up to three kernel launches on the same stream:
+ *   1. Corner kernel  — hybrid_compute_kernel<true>  (direct → C_vals)
+ *   2. Heavy kernel   — hybrid_compute_kernel<false> (→ partial_buf)
+ *   3. Reduce kernel  — hybrid_reduce_kernel         (partial_buf → C_vals)
  *
- * Ordering guarantee: all three kernels are enqueued on the
- * same stream (in-order FIFO), so stage-1 is guaranteed to
- * complete before stage-2 begins without any explicit event.
+ * Separate launches let each use its own smem allocation:
+ *   corner gets corner_max_smem (small → more L1 for B loads),
+ *   heavy  gets heavy_max_smem  (large → many A diags per partition).
+ *
+ * Same-stream FIFO ordering guarantees heavy finishes before reduce.
+ * Corner and heavy are independent and could run concurrently on
+ * separate streams if desired.
  * ============================================================ */
 void launch_hybrid(HybridKernelArgs args, cudaStream_t stream)
 {
     const int sm = hybrid_get_sm_count();
+    const int target_blocks = sm * HYBRID_BLOCKS_PER_SM;
 
-    /* ---- Corner kernel (persistent) ---- */
+    /* Query device smem limit once. */
+    int dev_max_smem = 0;
+    cudaDeviceGetAttribute(&dev_max_smem,
+        cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
+
+    /* ---- Corner kernel (DIRECT=true) ---- */
     if (args.n_corner > 0) {
-        cudaFuncSetAttribute(hybrid_corner_kernel,
-            cudaFuncAttributePreferredSharedMemoryCarveout,
-            cudaSharedmemCarveoutMaxL1);
-        /* 8 blocks per SM = target occupancy for 128-thread blocks. */
-        const int grid = std::min(sm * 8, args.n_corner);
-        hybrid_corner_kernel<<<grid, HYBRID_BLOCK_CORNER, 0, stream>>>(args);
+        const int grid = std::min(target_blocks, args.n_corner);
+        const int smem = std::min(args.corner_max_smem, dev_max_smem);
+        cudaFuncSetAttribute(hybrid_compute_kernel<true>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+
+        HybridKernelArgs corner_args = args;
+        corner_args.tasks   = args.corner_tasks;
+        corner_args.n_tasks = args.n_corner;
+        hybrid_compute_kernel<true>
+            <<<grid, HYBRID_BLOCK, smem, stream>>>(corner_args);
     }
 
-    /* ---- Heavy stage-1 kernel (persistent) ---- */
-    if (args.n_s1 > 0) {
-        cudaFuncSetAttribute(hybrid_heavy_s1_kernel,
-            cudaFuncAttributePreferredSharedMemoryCarveout,
-            cudaSharedmemCarveoutMaxShared);
-        /* 4 blocks per SM = target occupancy for 256-thread blocks
-         * with 4 KB shared memory each. */
-        const int grid = std::min(sm * 4, args.n_s1);
-        hybrid_heavy_s1_kernel<<<grid, HYBRID_BLOCK_HEAVY_S1, 0, stream>>>(args);
+    /* ---- Heavy kernel (DIRECT=false) ---- */
+    if (args.n_heavy > 0) {
+        const int grid = std::min(target_blocks, args.n_heavy);
+        const int smem = std::min(args.heavy_max_smem, dev_max_smem);
+        cudaFuncSetAttribute(hybrid_compute_kernel<false>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+
+        HybridKernelArgs heavy_args = args;
+        heavy_args.tasks   = args.heavy_tasks;
+        heavy_args.n_tasks = args.n_heavy;
+        hybrid_compute_kernel<false>
+            <<<grid, HYBRID_BLOCK, smem, stream>>>(heavy_args);
     }
 
-    /* ---- Heavy stage-2 reduce kernel (persistent, after s1) ---- */
-    if (args.n_s2 > 0) {
-        cudaFuncSetAttribute(hybrid_heavy_s2_reduce_kernel,
-            cudaFuncAttributePreferredSharedMemoryCarveout,
-            cudaSharedmemCarveoutMaxL1);
-        const int grid = std::min(sm * 4, args.n_s2);
-        hybrid_heavy_s2_reduce_kernel<<<grid, HYBRID_BLOCK_HEAVY_S2, 0, stream>>>(args);
-    }
-}
-
-/* ============================================================
- * HYBRID HEAVY FUSED KERNEL  —  pipelined s1 + s2
- *
- * Replaces the two separate s1/s2 kernel launches with a single
- * persistent kernel whose CTAs overlap s1 computation and s2
- * reduction at per-segment granularity.
- *
- * Control array layout (ctrl, device memory, 2 + n_s2 ints):
- *   ctrl[0]         : s1_next   — atomic counter, next s1 task to claim
- *   ctrl[1]         : s2_claim  — atomic counter, next s2 task to claim
- *   ctrl[2 + s2_idx]: pending[s2_idx] — countdown from num_partitions to 0;
- *                     when 0, all partial sums for that segment are committed.
- *
- * CTA life-cycle (interleaved, deadlock-free):
- *
- *   while (s2 tasks remain) {
- *       // Try to claim one s1 task (non-blocking: returns immediately)
- *       if (s1 tasks remain) {
- *           s1_idx = atomicAdd(ctrl[s1_next], 1)
- *           if s1_idx < n_s1:
- *               compute partial sum, write to partial_buf
- *               __threadfence()           // commit before signalling
- *               atomicSub(pending[s2_idx], 1)  // signal segment S ready
- *       }
- *
- *       // Scan for a ready, unclaimed s2 task (non-blocking)
- *       s2_idx = atomicAdd(ctrl[s2_claim], 1)  // claim next in order
- *       if s2_idx < n_s2:
- *           spin-wait until pending[s2_idx] == 0
- *           reduce partial slots → C_vals
- *   }
- *
- * Deadlock proof:
- *   A CTA only begins the s2 spin-wait after claiming an s2 slot.
- *   At that point there are fewer unclaimed s1 tasks than before,
- *   so at least one other CTA (or this CTA's next iteration) will
- *   claim and process the remaining s1 work.  Because every s1 task
- *   is eventually claimed and processed, every pending[] counter
- *   eventually reaches 0, and every spinning s2 CTA unblocks.
- *
- *   Liveness holds as long as grid_size <= n_s1 + n_s2 (the
- *   occupancy-saturated grid chosen by launch_hybrid_pipelined
- *   always satisfies this for non-trivial workloads).
- * ============================================================ */
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S1, 4)
-hybrid_heavy_fused_kernel(HybridKernelArgs args, int* ctrl)
-{
-    const int tid = static_cast<int>(threadIdx.x);
-
-    /* ctrl layout:  [s1_next | s2_claim | pending[0] ... pending[n_s2-1]] */
-    int* const s1_next   = ctrl + 0;
-    int* const s2_claim  = ctrl + 1;
-    int* const pending   = ctrl + 2;
-
-    __shared__ float smem_A[HYBRID_TILE_HEAVY];
-    __shared__ float smem_B[HYBRID_TILE_HEAVY];
-
-    /* Shared scratch so thread 0's atomic results are visible to all. */
-    __shared__ int sh_idx;
-
-    /* ---- Phase A: drain all s1 tasks (grid-stride) ---- *
-     *
-     * Each CTA claims s1 tasks until the global pool is exhausted.
-     * All CTAs must complete Phase A before any CTA enters Phase B,
-     * otherwise the following deadlock arises:
-     *   n_s1 >> n_CTAs  →  only ~n_CTAs/n_s1 pending decrements per
-     *   segment after one Phase A pass  →  all CTAs block in Phase B
-     *   spin-wait while remaining s1 tasks are never executed.
-     *
-     * With sequential phases every pending count reaches 0 before the
-     * first Phase B spin-wait begins.                                  */
-    for (;;) {
-        if (tid == 0) sh_idx = atomicAdd(s1_next, 1);
-        __syncthreads();
-        if (sh_idx >= args.n_s1) break;   /* s1 pool exhausted */
-
-        const HybridS1Task task = args.s1_tasks[sh_idx];
-        const bool active = (tid < task.p_len);
-
-        const int d_c     = task.c_offset;
-        const int c_sr    = (d_c >= 0) ? 0 : -d_c;
-        const int p_begin = task.p_begin;
-
-        float acc = 0.0f;
-
-        for (int pi = 0; pi < task.pair_count; ++pi) {
-            const HybridPair pe = args.pairs[task.pair_begin + pi];
-            const int ai  = pe.ai;
-            const int bi  = pe.bi;
-            const int d_a = args.A_offsets[ai];
-            const int d_b = args.B_offsets[bi];
-
-            {
-                const int a_sr  = (d_a >= 0) ? 0 : -d_a;
-                const int a_pos = c_sr - a_sr + p_begin + tid;
-                smem_A[tid] = (a_pos >= 0 && a_pos < args.A_lengths[ai])
-                            ? args.A_vals[args.A_starts[ai] + a_pos]
-                            : 0.0f;
-            }
-            {
-                const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                const int b_pos = c_sr + d_a - b_sr + p_begin + tid;
-                smem_B[tid] = (b_pos >= 0 && b_pos < args.B_lengths[bi])
-                            ? args.B_vals[args.B_starts[bi] + b_pos]
-                            : 0.0f;
-            }
-            __syncthreads();
-            if (active) acc += smem_A[tid] * smem_B[tid];
-            __syncthreads();
-        }
-
-        if (active) {
-            args.partial_buf[task.partial_offset + tid] = acc;
-        }
-        __syncthreads();
-
-        /* Flush partial_buf to L2/DRAM before signalling s2. */
-        if (tid == 0) {
-            __threadfence();
-            atomicSub(&pending[task.s2_task_idx], 1);
-        }
-        __syncthreads();
-    }
-
-    /* ---- Phase B: drain all s2 tasks (grid-stride) ---- *
-     *
-     * All s1 tasks are now either done or in-flight on other CTAs.
-     * Spin-wait on pending[s2_idx] is guaranteed to terminate because
-     * all s1 tasks will complete (the Phase A loop above is bounded).  */
-    for (;;) {
-        if (tid == 0) sh_idx = atomicAdd(s2_claim, 1);
-        __syncthreads();
-        const int s2_idx = sh_idx;
-
-        if (s2_idx >= args.n_s2) {
-            if (tid == 0) atomicSub(s2_claim, 1);
-            __syncthreads();
-            break;
-        }
-
-        /* Spin until all s1 partitions for this segment are committed. */
-        if (tid == 0) {
-            while (atomicAdd(&pending[s2_idx], 0) != 0) {
-#if __CUDA_ARCH__ >= 700
-                __nanosleep(64);
-#endif
-            }
-        }
-        __syncthreads();
-
-        /* Reduce partial slots → C. */
-        const HybridS2Task task = args.s2_tasks[s2_idx];
-        if (tid < task.p_len) {
-            float sum = 0.0f;
-            #pragma unroll 4
-            for (int p = 0; p < task.num_partials; ++p) {
-                sum += args.partial_buf[task.partial_offset
-                                        + p * HYBRID_TILE_HEAVY
-                                        + tid];
-            }
-            const HybridCDiag cd = args.c_diags[task.c_idx];
-            args.C_vals[cd.values_start + task.p_begin + tid] = sum;
-        }
-        __syncthreads();
+    /* ---- Reduction kernel (after heavy, same stream) ---- */
+    if (args.n_reduce > 0) {
+        const int grid = std::min(target_blocks, args.n_reduce);
+        hybrid_reduce_kernel
+            <<<grid, HYBRID_BLOCK, 0, stream>>>(args);
     }
 }
-
-/* ============================================================
- * init_fused_ctrl
- *
- * Resets the device control array before each fused launch.
- * Must be called on the same stream, before hybrid_heavy_fused_kernel.
- * ============================================================ */
-__global__ static void
-fused_ctrl_init_kernel(int* ctrl, int n_s2,
-                        const int* num_partitions_per_s2)
-{
-    /* ctrl[0] = s1_next, ctrl[1] = s2_claim */
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        ctrl[0] = 0;
-        ctrl[1] = 0;
-    }
-    /* ctrl[2 + i] = pending[i] */
-    for (int i = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
-         i < n_s2;
-         i += static_cast<int>(gridDim.x) * blockDim.x)
-    {
-        ctrl[2 + i] = num_partitions_per_s2[i];
-    }
-}
-
-void init_fused_ctrl(HybridKernelArgs args,
-                     int*             ctrl,
-                     cudaStream_t     stream)
-{
-    /* The host must also provide a device array of num_partitions per s2
-     * task.  We derive it from the s2_tasks array already on device.
-     * For simplicity this implementation requires a companion device
-     * array d_num_partitions[n_s2] pre-filled by the host from
-     * plan.s2_tasks[i].num_partials.
-     *
-     * Alternative: zero ctrl[0..1] with cudaMemsetAsync and fill
-     * pending[] with a simple init kernel as shown below. */
-    if (args.n_s2 == 0) return;
-    int grid = std::min(hybrid_get_sm_count() * 4, args.n_s2);
-    /* Caller is responsible for passing d_num_partitions in a
-     * side-channel (e.g., stored adjacent to ctrl in the same
-     * allocation).  See launch_hybrid_pipelined for the convention. */
-    fused_ctrl_init_kernel<<<grid, 256, 0, stream>>>(
-        ctrl, args.n_s2,
-        /* d_num_partitions: */ ctrl + 2 + args.n_s2);
-}
-
-/* ============================================================
- * launch_hybrid_pipelined
- *
- * Single fused kernel for heavy work (s1 + s2 overlapped) plus
- * the persistent corner kernel.  Reduces 3 kernel launches to 2
- * and allows s2 to start as soon as individual segment's partials
- * are committed — hiding s2 latency inside the s1 phase.
- *
- * ctrl allocation (caller responsibility):
- *   cudaMalloc(&ctrl, (2 + 2*n_s2) * sizeof(int));
- *   // [s1_next | s2_claim | pending[0..n_s2) | num_partitions[0..n_s2)]
- *   // Fill num_partitions[i] = plan.s2_tasks[i].num_partials before use.
- *
- * The init kernel (enqueued on the same stream before the fused
- * kernel) copies num_partitions[] into pending[] and zeros the
- * two counters, so ctrl can be reused across repeated calls.
- * ============================================================ */
-void launch_hybrid_pipelined(HybridKernelArgs args,
-                              int*             ctrl,
-                              cudaStream_t     stream)
-{
-    const int sm = hybrid_get_sm_count();
-
-    /* ---- Corner kernel (unchanged) ---- */
-    if (args.n_corner > 0) {
-        cudaFuncSetAttribute(hybrid_corner_kernel,
-            cudaFuncAttributePreferredSharedMemoryCarveout,
-            cudaSharedmemCarveoutMaxL1);
-        const int grid = std::min(sm * 8, args.n_corner);
-        hybrid_corner_kernel<<<grid, HYBRID_BLOCK_CORNER, 0, stream>>>(args);
-    }
-
-    if (args.n_s1 == 0 && args.n_s2 == 0) return;
-
-    /* ---- Reset ctrl for this invocation (async, same stream) ---- */
-    init_fused_ctrl(args, ctrl, stream);
-
-    /* ---- Fused s1 + s2 kernel ----
-     *
-     * Grid size: enough CTAs to saturate the GPU, but capped at
-     * n_s1 + n_s2 since each CTA processes at least one task.
-     * The interleaved scheduler ensures CTAs never all pile up in
-     * the s2 spin-wait while s1 work remains. */
-    cudaFuncSetAttribute(hybrid_heavy_fused_kernel,
-        cudaFuncAttributePreferredSharedMemoryCarveout,
-        cudaSharedmemCarveoutMaxShared);
-    const int grid = std::min(sm * 4, args.n_s1 + args.n_s2);
-    hybrid_heavy_fused_kernel<<<grid, HYBRID_BLOCK_HEAVY_S1, 0, stream>>>(
-        args, ctrl);
-}
-
-/* ============================================================
- * Example host driver (illustrates full usage)
- *
- * void run_hybrid_spmm(
- *     const DiagMatrix& A,
- *     DiagMatrix& B,          // will be offset-sorted in place
- *     int M, int K, int N,
- *     float*& d_C_vals,       // device output (allocated here)
- *     cudaStream_t stream)
- * {
- *     // 0. Ensure A offsets are sorted (required for binary search)
- *     sort_diag_matrix_by_offset(A_mutable);
- *
- *     // 1. Host preprocessing
- *     HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
- *
- *     // 2. Upload all arrays to device
- *     // ... (corner_tasks, s1_tasks, s2_tasks, c_diags, pairs,
- *     //      A_vals, A_offsets, A_starts, A_lengths,
- *     //      B_vals, B_offsets, B_starts, B_lengths, B_lookup)
- *
- *     // 3. Allocate device buffers
- *     cudaMalloc(&d_C_vals, plan.total_c_values * sizeof(float));
- *     float* d_partial_buf = nullptr;
- *     if (plan.partial_buf_size > 0)
- *         cudaMalloc(&d_partial_buf, plan.partial_buf_size * sizeof(float));
- *
- *     // 4. Fill HybridKernelArgs and launch
- *     HybridKernelArgs kargs = { ... };
- *     launch_hybrid(kargs, stream);
- *
- *     // 5. Synchronize, download results, free partial_buf
- * }
- * ============================================================ */

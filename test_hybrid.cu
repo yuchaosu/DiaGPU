@@ -283,8 +283,6 @@ static bool run_test(const char* name,
                      int M, int K, int N,
                      float tol = 1e-3f,
                      bool skip_cpu_check = false,
-                     int corner_thresh  = -1,   /* -1 = auto */
-                     int pairs_per_part = -1,   /* -1 = auto */
                      bool profile       = false) /* wrap with cudaProfilerStart/Stop */
 {
     printf("[%s] M=%d K=%d N=%d ...\n", name, M, K, N);  /* terminal progress */
@@ -302,13 +300,14 @@ static bool run_test(const char* name,
         cpu_ms = cpu_reference(A, B, M, K, N, C_ref);
 
     /* ---- 2. Build hybrid plan. ---- */
-    HybridPlan plan = build_hybrid_plan(A, B, M, K, N,
-                                        corner_thresh, pairs_per_part);
-    fprintf(g_out, "**Plan:** corner\\_tasks=%zu  s1\\_tasks=%zu  s2\\_tasks=%zu"
-            "  pairs=%zu  partial\\_buf=%d floats\n\n",
-            plan.corner_tasks.size(), plan.s1_tasks.size(),
-            plan.s2_tasks.size(),     plan.pairs.size(),
-            plan.partial_buf_size);
+    HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
+    fprintf(g_out, "**Plan:** corner=%zu  heavy=%zu  reduce=%zu"
+            "  a\\_contrib=%zu  partial\\_buf=%d floats"
+            "  smem corner=%d heavy=%d bytes\n\n",
+            plan.corner_tasks.size(), plan.heavy_tasks.size(),
+            plan.reduce_tasks.size(), plan.a_contrib.size(),
+            plan.partial_buf_size,
+            plan.corner_max_smem, plan.heavy_max_smem);
 
     /* ---- 3. Upload read-only data. ---- */
     float* d_A_vals    = upload(A.values);
@@ -320,17 +319,26 @@ static bool run_test(const char* name,
     int*   d_B_starts  = upload(B.diag_starts);
     int*   d_B_lengths = upload(B.diag_lengths);
 
-    auto b_lookup = build_b_diag_lookup(B, N);
-    int* d_B_lookup = upload(b_lookup);
+    /* Extended B_lookup: size 4N-3, base offset 2*(N-1).
+     * Any d_b in [-(2N-2), 2N-2] indexes safely; out-of-range → -1. */
+    const int blb = 2 * (N - 1);                 /* b_lookup_base */
+    const int bl_size = 4 * N - 3;
+    std::vector<int> b_lookup_ext(bl_size, -1);
+    {
+        auto b_lookup_std = build_b_diag_lookup(B, N);  /* size 2N-1 */
+        /* Copy standard lookup into the centre of the extended array.
+         * Standard: index d_b + (N-1) for d_b in [-(N-1), N-1].
+         * Extended: index d_b + 2*(N-1). Offset = (N-1).              */
+        for (int i = 0; i < static_cast<int>(b_lookup_std.size()); ++i)
+            b_lookup_ext[(N - 1) + i] = b_lookup_std[i];
+    }
+    int* d_B_lookup = upload(b_lookup_ext);
 
-    int B_off_min = *std::min_element(B.offsets.begin(), B.offsets.end());
-    int B_off_max = *std::max_element(B.offsets.begin(), B.offsets.end());
-
-    HybridCornerTask* d_corner = upload(plan.corner_tasks);
-    HybridS1Task*     d_s1     = upload(plan.s1_tasks);
-    HybridS2Task*     d_s2     = upload(plan.s2_tasks);
-    HybridCDiag*      d_cdiags = upload(plan.c_diags);
-    HybridPair*       d_pairs  = upload(plan.pairs);
+    HybridTask*        d_corner_tasks = upload(plan.corner_tasks);
+    HybridTask*        d_heavy_tasks  = upload(plan.heavy_tasks);
+    HybridReduceTask*  d_reduce       = upload(plan.reduce_tasks);
+    HybridCDiag*       d_cdiags       = upload(plan.c_diags);
+    int*               d_acontrib     = upload(plan.a_contrib);
 
     float* d_C_vals = nullptr;
     CUDA_CHECK(cudaMalloc(&d_C_vals,
@@ -343,31 +351,33 @@ static bool run_test(const char* name,
 
     /* ---- 4. Assemble KernelArgs. ---- */
     HybridKernelArgs kargs = {};
-    kargs.corner_tasks = d_corner;
-    kargs.n_corner     = static_cast<int>(plan.corner_tasks.size());
-    kargs.s1_tasks     = d_s1;
-    kargs.n_s1         = static_cast<int>(plan.s1_tasks.size());
-    kargs.s2_tasks     = d_s2;
-    kargs.n_s2         = static_cast<int>(plan.s2_tasks.size());
-    kargs.c_diags      = d_cdiags;
-    kargs.A_vals       = d_A_vals;
-    kargs.A_offsets    = d_A_offsets;
-    kargs.A_starts     = d_A_starts;
-    kargs.A_lengths    = d_A_lengths;
-    kargs.A_num_diags  = A.num_diags;
-    kargs.B_vals       = d_B_vals;
-    kargs.B_offsets    = d_B_offsets;
-    kargs.B_starts     = d_B_starts;
-    kargs.B_lengths    = d_B_lengths;
-    kargs.B_lookup     = d_B_lookup;
-    kargs.n            = N;
-    kargs.B_offset_min = B_off_min;
-    kargs.B_offset_max = B_off_max;
-    kargs.pairs        = d_pairs;
-    kargs.C_vals       = d_C_vals;
-    kargs.partial_buf  = d_partial;
+    kargs.corner_tasks    = d_corner_tasks;
+    kargs.n_corner        = static_cast<int>(plan.corner_tasks.size());
+    kargs.heavy_tasks     = d_heavy_tasks;
+    kargs.n_heavy         = static_cast<int>(plan.heavy_tasks.size());
+    kargs.corner_max_smem = plan.corner_max_smem;
+    kargs.heavy_max_smem  = plan.heavy_max_smem;
+    kargs.reduce_tasks    = d_reduce;
+    kargs.n_reduce        = static_cast<int>(plan.reduce_tasks.size());
+    kargs.c_diags       = d_cdiags;
+    kargs.n_c_diags     = static_cast<int>(plan.c_diags.size());
+    kargs.a_contrib     = d_acontrib;
+    kargs.A_vals        = d_A_vals;
+    kargs.A_offsets     = d_A_offsets;
+    kargs.A_starts      = d_A_starts;
+    kargs.A_lengths     = d_A_lengths;
+    kargs.A_num_diags   = A.num_diags;
+    kargs.B_vals        = d_B_vals;
+    kargs.B_offsets     = d_B_offsets;
+    kargs.B_starts      = d_B_starts;
+    kargs.B_lengths     = d_B_lengths;
+    kargs.B_lookup      = d_B_lookup;
+    kargs.b_lookup_base = blb;
+    kargs.n             = N;
+    kargs.C_vals        = d_C_vals;
+    kargs.partial_buf   = d_partial;
 
-    /* ---- 5. SM count (for per-kernel grid replication). ---- */
+    /* ---- 5. SM count. ---- */
     int sm_count = 0;
     {
         int dev; CUDA_CHECK(cudaGetDevice(&dev));
@@ -375,79 +385,12 @@ static bool run_test(const char* name,
                                           cudaDevAttrMultiProcessorCount, dev));
     }
 
-    /* ---- 6. Per-kernel timing helpers.
-     *
-     * We time the three sequential kernels individually so we can see
-     * which phase dominates.  Grid sizes mirror launch_hybrid exactly.
-     * ---------------------------------------------------------------- */
-    int grid_corner = (kargs.n_corner > 0)
-                    ? std::min(sm_count * 8, kargs.n_corner) : 0;
-    int grid_s1     = (kargs.n_s1 > 0)
-                    ? std::min(sm_count * 4, kargs.n_s1) : 0;
-    int grid_s2     = (kargs.n_s2 > 0)
-                    ? std::min(sm_count * 4, kargs.n_s2) : 0;
-    int grid_fused  = (kargs.n_s1 + kargs.n_s2 > 0)
-                    ? std::min(sm_count * 4, kargs.n_s1 + kargs.n_s2) : 0;
-
-    /* ctrl array for pipelined kernel (allocated once, re-inited per run). */
-    int  n_s2   = kargs.n_s2;
-    int* d_ctrl = nullptr;
-    if (kargs.n_s1 > 0 || kargs.n_s2 > 0) {
-        std::vector<int> h_ctrl(2 + 2 * n_s2, 0);
-        for (int i = 0; i < n_s2; ++i)
-            h_ctrl[2 + n_s2 + i] = plan.s2_tasks[i].num_partials;
-        d_ctrl = upload(h_ctrl);
-    }
-
-    /* ---- 7. Individual kernel timings. ---- */
-
-    TimingResult t_corner = {};
-    if (grid_corner > 0) {
-        t_corner = measure_gpu([&] {
-            hybrid_corner_kernel<<<grid_corner, HYBRID_BLOCK_CORNER>>>(kargs);
-        });
-    }
-
-    TimingResult t_s1 = {};
-    if (grid_s1 > 0) {
-        if (profile) cudaProfilerStart();
-        t_s1 = measure_gpu([&] {
-            hybrid_heavy_s1_kernel<<<grid_s1, HYBRID_BLOCK_HEAVY_S1>>>(kargs);
-        });
-        if (profile) cudaProfilerStop();
-    }
-
-    TimingResult t_s2 = {};
-    if (grid_s2 > 0) {
-        t_s2 = measure_gpu([&] {
-            hybrid_heavy_s2_reduce_kernel<<<grid_s2, HYBRID_BLOCK_HEAVY_S2>>>(kargs);
-        });
-    }
-
-    TimingResult t_fused = {};
-    if (grid_fused > 0 && d_ctrl) {
-        t_fused = measure_gpu([&] {
-            init_fused_ctrl(kargs, d_ctrl);
-            hybrid_heavy_fused_kernel<<<grid_fused, HYBRID_BLOCK_HEAVY_S1>>>(
-                kargs, d_ctrl);
-        });
-    }
-
-    /* ---- 8. End-to-end launch timings
-     *         (includes kernel launch API overhead for all phases).
-     * ---------------------------------------------------------------- */
+    /* ---- 6. End-to-end launch timing. ---- */
     if (profile) cudaProfilerStart();
-    TimingResult t_seq = measure_gpu([&] {
+    TimingResult t_total = measure_gpu([&] {
         launch_hybrid(kargs);
     });
     if (profile) cudaProfilerStop();
-
-    TimingResult t_pipe = {};
-    if (d_ctrl) {
-        t_pipe = measure_gpu([&] {
-            launch_hybrid_pipelined(kargs, d_ctrl);
-        });
-    }
 
     /* ---- 8b. paper_hm_kernel baseline (square matrices only). ---- */
     TimingResult t_hm   = {};
@@ -557,14 +500,12 @@ static bool run_test(const char* name,
         }
     }
 
-    /* ---- 9. Correctness check (one run each, output written once). ---- */
+    /* ---- 9. Correctness check. ---- */
     bool all_ok = true;
     all_ok &= hm_ok;
-    float err_seq  = -1.0f;
-    float err_pipe = -1.0f;
+    float err_hybrid = -1.0f;
 
     if (!skip_cpu_check) {
-        /* Sequential correctness. */
         CUDA_CHECK(cudaMemset(d_C_vals, 0,
                    static_cast<size_t>(plan.total_c_values) * sizeof(float)));
         launch_hybrid(kargs);
@@ -572,61 +513,24 @@ static bool run_test(const char* name,
         {
             auto C_gpu = download(d_C_vals,
                                   static_cast<size_t>(plan.total_c_values));
-            err_seq = compare_result(C_gpu, plan, C_ref, M, N);
-            all_ok &= (err_seq < tol);
-        }
-
-        /* Pipelined correctness. */
-        if (d_ctrl) {
-            CUDA_CHECK(cudaMemset(d_C_vals, 0,
-                       static_cast<size_t>(plan.total_c_values) * sizeof(float)));
-            launch_hybrid_pipelined(kargs, d_ctrl);
-            CUDA_CHECK(cudaDeviceSynchronize());
-            auto C_gpu2 = download(d_C_vals,
-                                   static_cast<size_t>(plan.total_c_values));
-            err_pipe = compare_result(C_gpu2, plan, C_ref, M, N);
-            all_ok &= (err_pipe < tol);
+            err_hybrid = compare_result(C_gpu, plan, C_ref, M, N);
+            all_ok &= (err_hybrid < tol);
         }
     }
     {
 
         /* ---- 10. Write markdown results. ---- */
 
-        /* ---- Sequential path table ---- */
-        fprintf(g_out, "### Sequential path  (warmup=%d, runs=%d)\n\n",
+        /* ---- Timing table ---- */
+        fprintf(g_out, "### Unified kernel  (warmup=%d, runs=%d)\n\n",
                 N_WARMUP, N_MEASURE);
         md_timing_header();
         if (!skip_cpu_check)
             md_timing_row_cpu("CPU reference (single run)", cpu_ms);
         else
             fprintf(g_out, "| CPU reference | skipped | — | — |\n");
-        if (grid_corner > 0)
-            md_timing_row("corner kernel",
-                          t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
-        if (grid_s1 > 0)
-            md_timing_row("s1 heavy partial sums",
-                          t_s1.mean_ms, t_s1.min_ms, t_s1.max_ms);
-        if (grid_s2 > 0)
-            md_timing_row("s2 heavy reduction",
-                          t_s2.mean_ms, t_s2.min_ms, t_s2.max_ms);
-        md_timing_row("**sequential total (3 launches)**",
-                      t_seq.mean_ms, t_seq.min_ms, t_seq.max_ms);
-        fprintf(g_out, "\n");
-
-        /* ---- Pipelined path table ---- */
-        fprintf(g_out, "### Pipelined path\n\n");
-        md_timing_header();
-        if (grid_corner > 0)
-            md_timing_row("corner kernel",
-                          t_corner.mean_ms, t_corner.min_ms, t_corner.max_ms);
-        if (grid_fused > 0)
-            md_timing_row("fused kernel (s1+s2)",
-                          t_fused.mean_ms, t_fused.min_ms, t_fused.max_ms);
-        if (d_ctrl)
-            md_timing_row("**pipelined total (2 launches)**",
-                          t_pipe.mean_ms, t_pipe.min_ms, t_pipe.max_ms);
-        else
-            fprintf(g_out, "| **pipelined total** | skipped | — | — |\n");
+        md_timing_row("**hybrid unified (compute+reduce)**",
+                      t_total.mean_ms, t_total.min_ms, t_total.max_ms);
         fprintf(g_out, "\n");
 
         /* ---- Baseline table ---- */
@@ -643,26 +547,11 @@ static bool run_test(const char* name,
         fprintf(g_out, "### Speedups\n\n");
         fprintf(g_out, "| Comparison | speedup | from (ms) | to (ms) |\n");
         fprintf(g_out, "|:-----------|--------:|----------:|--------:|\n");
-        if (d_ctrl && t_pipe.mean_ms > 0.0f)
-            fprintf(g_out, "| sequential → pipelined | %.2fx | %.3f | %.3f |\n",
-                    t_seq.mean_ms / t_pipe.mean_ms,
-                    t_seq.mean_ms, t_pipe.mean_ms);
-        if (t_hm.mean_ms > 0.0f && t_seq.mean_ms > 0.0f)
-            fprintf(g_out, "| hybrid seq vs paper\\_hm | %.2fx | %.3f | %.3f |\n",
-                    t_hm.mean_ms / t_seq.mean_ms,
-                    t_hm.mean_ms, t_seq.mean_ms);
-        if (t_hm.mean_ms > 0.0f && t_pipe.mean_ms > 0.0f)
-            fprintf(g_out, "| hybrid pipe vs paper\\_hm | %.2fx | %.3f | %.3f |\n",
-                    t_hm.mean_ms / t_pipe.mean_ms,
-                    t_hm.mean_ms, t_pipe.mean_ms);
+        if (t_hm.mean_ms > 0.0f && t_total.mean_ms > 0.0f)
+            fprintf(g_out, "| hybrid vs paper\\_hm | %.2fx | %.3f | %.3f |\n",
+                    t_hm.mean_ms / t_total.mean_ms,
+                    t_hm.mean_ms, t_total.mean_ms);
         fprintf(g_out, "\n");
-        if (grid_s1 > 0 && grid_s2 > 0) {
-            float heavy_total = t_s1.mean_ms + t_s2.mean_ms;
-            fprintf(g_out,
-                    "s1 / (s1+s2) = %.1f%%  (s2 is %.1f%% of heavy work)\n\n",
-                    100.0f * t_s1.mean_ms / heavy_total,
-                    100.0f * t_s2.mean_ms / heavy_total);
-        }
 
         /* ---- Correctness ---- */
         fprintf(g_out, "### Correctness\n\n");
@@ -671,16 +560,10 @@ static bool run_test(const char* name,
         } else {
             fprintf(g_out, "| Kernel | max\\_err | result |\n");
             fprintf(g_out, "|:-------|----------:|:------|\n");
-            if (err_seq >= 0.0f)
-                fprintf(g_out, "| sequential (launch\\_hybrid) | %.2e | %s |\n",
-                        static_cast<double>(err_seq),
-                        (err_seq < tol) ? "PASS" : "**FAIL**");
-            if (err_pipe >= 0.0f)
-                fprintf(g_out, "| pipelined (launch\\_hybrid\\_pipelined) | %.2e | %s |\n",
-                        static_cast<double>(err_pipe),
-                        (err_pipe < tol) ? "PASS" : "**FAIL**");
-            else
-                fprintf(g_out, "| pipelined | — | skipped (no heavy tasks) |\n");
+            if (err_hybrid >= 0.0f)
+                fprintf(g_out, "| hybrid unified | %.2e | %s |\n",
+                        static_cast<double>(err_hybrid),
+                        (err_hybrid < tol) ? "PASS" : "**FAIL**");
             if (hm_err >= 0.0f)
                 fprintf(g_out, "| paper\\_hm\\_kernel | %.2e | %s |\n",
                         static_cast<double>(hm_err),
@@ -698,12 +581,11 @@ static bool run_test(const char* name,
     cudaFree(d_B_vals);    cudaFree(d_B_offsets);
     cudaFree(d_B_starts);  cudaFree(d_B_lengths);
     cudaFree(d_B_lookup);
-    cudaFree(d_corner);    cudaFree(d_s1);
-    cudaFree(d_s2);        cudaFree(d_cdiags);
-    cudaFree(d_pairs);
+    cudaFree(d_corner_tasks); cudaFree(d_heavy_tasks);
+    cudaFree(d_reduce);
+    cudaFree(d_cdiags);    cudaFree(d_acontrib);
     cudaFree(d_C_vals);
     if (d_partial) cudaFree(d_partial);
-    if (d_ctrl)    cudaFree(d_ctrl);
 
     /* HM baseline cleanup. */
     cudaFree(d_hA_vals); cudaFree(d_hA_off);
@@ -871,7 +753,6 @@ int main()
         auto B = make_diag_matrix(sz, sz, ob, 0.5f);
         all_pass &= run_test("heavy_8192x8192_64diags",
                              A, B, sz, sz, sz, 1e-3f, /*skip_cpu_check=*/true,
-                             /*corner_thresh=*/-1, /*pairs_per_part=*/-1,
                              /*profile=*/true);
     }
 

@@ -1,65 +1,66 @@
 /* ============================================================
  * diag_hybrid_kernel.cuh
  *
- * Hybrid two-stage diagonal SpMM kernel.
+ * Unified C-centric diagonal SpMM kernel (C = A × B in DIA format).
  *
- * Splits output diagonals into two categories:
+ * Each CTA owns a GROUP of K consecutive output C diagonals.
+ * It tiles by position (p_begin), preloads all contributing
+ * A diagonal chunks into shared memory, then accumulates with
+ * B from registers.  Each thread holds K independent accumulators.
  *
- *   CORNER (few contributing pairs, <= HYBRID_CORNER_THRESH):
- *     One CTA owns one (C diagonal, segment).
- *     Iterates all (dA, dB) pairs, stages A/B tiles through
- *     shared memory, accumulates in registers, writes directly.
+ * Corner vs Heavy split (smem capacity based):
  *
- *   HEAVY (many contributing pairs, > HYBRID_CORNER_THRESH):
- *     Stage 1 — One CTA owns one (C diagonal, segment, pair-subset).
- *                Loads HYBRID_PAIRS_PER_PART A+B tile pairs into
- *                shared memory, accumulates partial sums, writes
- *                to an exclusive slot in partial_buf.
- *     Stage 2 — One CTA owns one (C diagonal, segment).
- *                Scalar-reduces all partial slots for that
- *                segment and writes final output to C.
+ *   CORNER group — all contributing A diagonals fit in smem
+ *     in one pass.  CTA writes acc[] directly to C_vals.
  *
- * All three kernels are PERSISTENT: a fixed occupancy-saturated
- * grid (num_SMs × target_blocks_per_SM) is launched once, and
- * each CTA iterates its task slice via a grid-stride loop.
- * This keeps kernel launch overhead at O(1) regardless of the
- * number of tasks (corner, s1, or s2).
+ *   HEAVY group — too many A diagonals for smem.  A contributors
+ *     are split into partitions.  Each partition is a separate
+ *     task that runs the SAME computation kernel and writes to
+ *     partial_buf.  A reduction kernel sums partials into C_vals.
  *
  * Design invariants:
- *   ZERO atomic operations
+ *   ZERO atomic operations in computation kernel
  *   One CTA == exclusive output region (no write conflicts)
- *   Shared memory staging for coalesced A/B loads
- *   Register accumulation, single final writeback
+ *   A staged in shared memory, B in registers
+ *   K local accumulators per thread, single final writeback
+ *
+ * Tuned for H100:
+ *   228 KB smem/SM, 65536 regs/SM, 132 SMs.
+ *   Target 4 blocks/SM → 57 KB smem/block, 128 regs/thread.
  * ============================================================ */
 #pragma once
 
-#include "diag_types.cuh"     // DiagMatrix, OutputDiagInfo, etc.
+#include "diag_types.cuh"
 #include "diag_host_preprocess.cuh"
 #include <cuda_runtime.h>
 #include <vector>
 
 /* ============================================================
- * Compile-time configuration
+ * Compile-time configuration (H100 tuned)
  * ============================================================ */
-constexpr int HYBRID_TILE_CORNER    = 128;   // segment length, corner kernel
-constexpr int HYBRID_BLOCK_CORNER   = 128;   // block size, corner kernel
-constexpr int HYBRID_TILE_HEAVY     = 256;   // segment length, heavy kernels
-constexpr int HYBRID_BLOCK_HEAVY_S1 = 256;   // block size, stage-1 kernel
-constexpr int HYBRID_BLOCK_HEAVY_S2 = 256;   // block size, stage-2 kernel
-constexpr int HYBRID_PAIRS_PER_PART =   8;   // pairs per stage-1 CTA
-constexpr int HYBRID_CORNER_THRESH  =  16;   // <= this → corner, else heavy
+constexpr int HYBRID_TILE          = 128;   // positions per tile = threads/block
+constexpr int HYBRID_BLOCK         = 128;   // threads per block
+constexpr int HYBRID_DIAGS_PER_CTA =   8;   // C diagonals per group (K)
+constexpr int HYBRID_BLOCKS_PER_SM =   4;   // target occupancy
+
+/* smem budget per block: 228 KB / 4 = 57 KB.
+ * Double buffering halves effective budget: 57 / 2 = 28.5 KB per buffer.
+ * Chunk padded to 4-float alignment for float4 loads:
+ *   raw = TILE + K - 1 = 135, padded -> 136.
+ * Max A diags per partition = 28.5 KB / (136 * 4) = 52.           */
+constexpr int HYBRID_SMEM_BUDGET   = 57 * 1024;  // total bytes per block
+constexpr int HYBRID_MAX_CHUNK_RAW = HYBRID_TILE + HYBRID_DIAGS_PER_CTA - 1;
+constexpr int HYBRID_MAX_CHUNK     = (HYBRID_MAX_CHUNK_RAW + 3) & ~3;  // 136
+constexpr int HYBRID_A_UNROLL      = 4;   // A diags processed simultaneously for B ILP
+/* Each buffer holds a_count * chunk floats; two buffers needed. */
+constexpr int HYBRID_MAX_A_PER_PART =
+    HYBRID_SMEM_BUDGET / (2 * HYBRID_MAX_CHUNK * static_cast<int>(sizeof(float)));
 
 /* ============================================================
  * Device-side data structures
  * ============================================================ */
 
-/* One (ai, bi) contributor pair for a heavy output diagonal. */
-struct HybridPair {
-    int ai;   // index into A diagonal list
-    int bi;   // index into B diagonal list
-};
-
-/* Metadata for one output diagonal. */
+/* Metadata for one output diagonal (unchanged). */
 struct HybridCDiag {
     int c_offset;       // dC
     int c_sr;           // start row: max(0, -dC)
@@ -67,181 +68,123 @@ struct HybridCDiag {
     int values_start;   // offset into C_vals[]
 };
 
-/* Corner task: CTA owns (c_diag, segment). */
-struct HybridCornerTask {
-    int c_idx;          // index into c_diags[]
-    int c_offset;       // dC
-    int p_begin;        // segment start position
-    int p_len;          // segment length (<= HYBRID_TILE_CORNER)
-    int ai_begin;       // valid A-diagonal range (precomputed on host)
-    int ai_end;
-};
-
-/* Heavy stage-1 task: CTA owns (c_diag, segment, pair partition). */
-struct HybridS1Task {
-    int c_idx;
-    int c_offset;
-    int p_begin;
-    int p_len;          // <= HYBRID_TILE_HEAVY
-    int pair_begin;     // index into global pairs[] array
-    int pair_count;     // number of pairs to process (<= HYBRID_PAIRS_PER_PART)
-    int partial_offset; // element offset into partial_buf[] for this slot
-    int s2_task_idx;    // which s2 task this partition belongs to
-                        // (used by fused kernel to signal readiness)
-};
-
-/* Heavy stage-2 task: CTA owns (c_diag, segment) and reduces partials. */
-struct HybridS2Task {
-    int c_idx;
-    int p_begin;
-    int p_len;
-    int partial_offset; // start of partial slots for this (c_diag, segment)
-    int num_partials;   // number of partial slots to sum
-};
-
-/* ============================================================
- * FusedKernelCtrl — device-side control state for the pipelined
- * fused kernel.  Allocated once on the device and reused across
- * calls (reset by the host before each launch).
+/* Unified task: one (group, A-partition) assignment for a CTA.
  *
- * Layout:
- *   [0]          : global s1 task counter  (atomicAdd)
- *   [1]          : global s2 claim counter (atomicAdd)
- *   [2 .. 2+n_s2): pending[i] = number of s1 partitions still
- *                  outstanding for s2 task i.  Initialised by
- *                  the host to num_partitions[i] before launch.
- * ============================================================ */
-struct FusedKernelCtrl {
-    int s1_next;             // next s1 task to claim
-    int s2_claim;            // next s2 task to claim (in readiness order)
-    // pending[] follows in the same allocation: ctrl + 2 + n_s2 ints
+ * Corner group  → 1 task,  out_offset = c_vals offset (direct write)
+ * Heavy partition → P tasks, out_offset = partial_buf offset
+ *
+ * The computation kernel is identical for both; only the output
+ * pointer differs (C_vals vs partial_buf), selected by is_direct. */
+struct HybridTask {
+    int c_begin;       // first index into c_diags[]
+    int c_count;       // C diags in this group (≤ HYBRID_DIAGS_PER_CTA)
+    int min_c_sr;      // min c_sr across group
+    int spread;        // max_c_sr - min_c_sr (≤ K-1)
+    int max_c_len;     // max C diagonal length in group (for tile loop bound)
+    int a_begin;       // index into a_contrib[]
+    int a_count;       // number of A diags in this partition
+    int is_direct;     // 1 = write to C_vals, 0 = write to partial_buf
+    int out_offset;    // base offset into partial_buf (heavy only)
+};
+
+/* Reduction task: sums partial_buf partitions into C_vals.
+ * One per (group, tile position) for heavy groups. */
+struct HybridReduceTask {
+    int c_begin;       // first index into c_diags[]
+    int c_count;       // C diags in group
+    int min_c_sr;      // min c_sr across group
+    int spread;        // max_c_sr - min_c_sr
+    int max_c_len;     // for tile loop bound
+    int partial_base;  // start in partial_buf for this group
+    int num_partials;  // number of partitions to sum
 };
 
 /* ============================================================
- * KernelArgs — passed by value to all kernels (lands in
- * constant memory for fast broadcast).
+ * KernelArgs — passed by value to all kernels.
  * ============================================================ */
 struct HybridKernelArgs {
-    /* Corner tasks */
-    const HybridCornerTask* corner_tasks;
+    /* Corner tasks (DIRECT=true kernel) */
+    const HybridTask*       tasks;      // used by kernel (set per launch)
+    int                     n_tasks;    // used by kernel (set per launch)
+    const HybridTask*       corner_tasks;
     int                     n_corner;
+    /* Heavy tasks (DIRECT=false kernel) */
+    const HybridTask*       heavy_tasks;
+    int                     n_heavy;
+    /* Smem sizes for each launch */
+    int                     corner_max_smem;
+    int                     heavy_max_smem;
 
-    /* Heavy stage-1 tasks */
-    const HybridS1Task*     s1_tasks;
-    int                     n_s1;
-
-    /* Heavy stage-2 tasks */
-    const HybridS2Task*     s2_tasks;
-    int                     n_s2;
+    /* Reduce tasks */
+    const HybridReduceTask* reduce_tasks;
+    int                     n_reduce;
 
     /* Output diagonal metadata */
     const HybridCDiag*      c_diags;
+    int                     n_c_diags;
 
-    /* A matrix (sorted by offset, required for binary-search range) */
+    /* Contributing A diagonal indices per task (flat array) */
+    const int*              a_contrib;
+
+    /* A matrix (sorted by offset) */
     const float* A_vals;
-    const int*   A_offsets;      // sorted ascending
-    const int*   A_starts;       // A_vals base index per diagonal
+    const int*   A_offsets;
+    const int*   A_starts;
     const int*   A_lengths;
     int          A_num_diags;
 
     /* B matrix */
     const float* B_vals;
-    const int*   B_offsets;      // B_offsets[bi] = d_b (needed for b_sr)
+    const int*   B_offsets;
     const int*   B_starts;
     const int*   B_lengths;
-    const int*   B_lookup;       // size 2n-1, maps d_b+(n-1) → bi, or -1
+    const int*   B_lookup;       // extended: size 4n-3, maps d_b+b_lookup_base → bi or -1
+    int          b_lookup_base;  // = 2*(n-1), so any d_b in [-(2n-2), 2n-2] is safe
     int          n;
-    int          B_offset_min;
-    int          B_offset_max;
-
-    /* Pair list (for stage-1 tasks) */
-    const HybridPair* pairs;
 
     /* Buffers */
     float* C_vals;
-    float* partial_buf;           // layout: see build_hybrid_plan()
+    float* partial_buf;
 };
 
 /* ============================================================
- * Host-side plan (result of build_hybrid_plan)
+ * Host-side plan
  * ============================================================ */
 struct HybridPlan {
-    std::vector<HybridCDiag>      c_diags;
-    std::vector<HybridCornerTask> corner_tasks;
-    std::vector<HybridS1Task>     s1_tasks;
-    std::vector<HybridS2Task>     s2_tasks;
-    std::vector<HybridPair>       pairs;      // global pair list for heavy tasks
-    int total_c_values;                       // total floats needed for C_vals
-    int partial_buf_size;                     // total floats needed for partial_buf
+    std::vector<HybridCDiag>       c_diags;
+    std::vector<HybridTask>        corner_tasks; // direct-write tasks
+    std::vector<HybridTask>        heavy_tasks;  // partial_buf tasks
+    std::vector<HybridReduceTask>  reduce_tasks; // heavy groups only
+    std::vector<int>               a_contrib;    // flat A-diag indices per task
+    int total_c_values;
+    int partial_buf_size;
+    int corner_max_smem;  // max dynamic smem across corner tasks
+    int heavy_max_smem;   // max dynamic smem across heavy tasks
 };
 
 /* ============================================================
  * Host-side preprocessing
  * ============================================================ */
-
-/* Build the full hybrid plan from two diagonal matrices.
- * A must have its offsets sorted ascending (call
- * sort_diag_matrix_by_offset from diag_host_preprocess.cuh).
- *
- * corner_thresh  — pair-count threshold for the corner/heavy split.
- *                  A diagonal is routed heavy only when BOTH:
- *                    num_pairs > corner_thresh
- *                    c_length  > HYBRID_TILE_HEAVY
- *                  Short diagonals always go corner regardless of pair count.
- *                  Pass -1 (default) to use HYBRID_CORNER_THRESH.
- *
- * pairs_per_part — number of (dA,dB) pairs processed per stage-1 CTA for
- *                  heavy diagonals.  Only relevant when corner_thresh < max
- *                  pairs.  Pass -1 (default) to use HYBRID_PAIRS_PER_PART. */
 HybridPlan build_hybrid_plan(const DiagMatrix& A,
                               const DiagMatrix& B,
-                              int M,
-                              int K,
-                              int N,
-                              int corner_thresh  = -1,
-                              int pairs_per_part = -1);
+                              int M, int K, int N);
 
 /* ============================================================
  * Kernel declarations
  * ============================================================ */
 
-__global__ void __launch_bounds__(HYBRID_BLOCK_CORNER, 8)
-hybrid_corner_kernel(HybridKernelArgs args);
+/* Computation kernel — template-specialized for corner (direct write)
+ * and heavy (partial_buf write).  No runtime branch in Phase 3.
+ * Dynamic shared memory: 2 * task.a_count * chunk * sizeof(float). */
+template <bool DIRECT>
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_compute_kernel(HybridKernelArgs args);
 
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S1, 4)
-hybrid_heavy_s1_kernel(HybridKernelArgs args);
-
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S2, 4)
-hybrid_heavy_s2_reduce_kernel(HybridKernelArgs args);
-
-/* Pipelined fused kernel: s1 and s2 overlap within a single launch.
- * CTAs interleave s1 work and s2 readiness checks so that s2 for
- * segment S starts the moment all s1 partitions for S have committed
- * their partial sums — without waiting for other segments' s1 work.
- *
- * Requires ctrl to be allocated on the device (see launch_hybrid_pipelined).
- * ctrl layout: [s1_next | s2_claim | pending[0] ... pending[n_s2-1]]
- * The host must initialise ctrl before each launch via
- * init_fused_ctrl(). */
-__global__ void __launch_bounds__(HYBRID_BLOCK_HEAVY_S1, 4)
-hybrid_heavy_fused_kernel(HybridKernelArgs args, int* ctrl);
+/* Reduction kernel — sums partial_buf → C_vals for heavy groups. */
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_reduce_kernel(HybridKernelArgs args);
 
 /* ============================================================
- * Host-side launch wrappers
+ * Host-side launch wrapper
  * ============================================================ */
-
-/* Two-kernel sequential launch (3 kernels total with corner). */
 void launch_hybrid(HybridKernelArgs args, cudaStream_t stream = 0);
-
-/* Pipelined launch: corner kernel + one fused s1/s2 kernel.
- * ctrl must be a device allocation of size
- *   (2 + args.n_s2) * sizeof(int)
- * initialised by init_fused_ctrl() before each call.         */
-void launch_hybrid_pipelined(HybridKernelArgs args,
-                              int*             ctrl,
-                              cudaStream_t     stream = 0);
-
-/* Reset ctrl on the device (async, runs on stream). */
-void init_fused_ctrl(HybridKernelArgs args,
-                     int*             ctrl,
-                     cudaStream_t     stream = 0);
