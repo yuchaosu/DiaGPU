@@ -35,7 +35,12 @@ BENCH_TARGET = bench_compare
 BENCH_SRCS   = bench_compare.cu paper_hm_kernel.cu diag_kernel.cu diag_rowtiled_kernel.cu diag_batched_kernel.cu hm_optimized_kernel.cu
 BENCH_HEADERS = $(HEADERS) paper_hm.cuh diag_rowtiled_kernel.cuh diag_batched_kernel.cuh hm_optimized_kernel.cuh
 
-.PHONY: all clean run hazel reginfo paper run_paper bench run_bench
+# DIA SpMV (standalone)
+SPMV_TARGET  = test_spmv
+SPMV_SRCS    = test_spmv.cu dia_spmv.cu
+SPMV_HEADERS = dia_spmv.cuh
+
+.PHONY: all clean run hazel reginfo paper run_paper bench run_bench spmv run_spmv
 
 all: $(TARGET)
 
@@ -73,5 +78,13 @@ reginfo: $(SRCS) $(HEADERS)
 run: $(TARGET)
 	./$(TARGET)
 
+spmv: $(SPMV_TARGET)
+
+$(SPMV_TARGET): $(SPMV_SRCS) $(SPMV_HEADERS)
+	$(NVCC) $(NVCC_FLAGS) $(ARCH) $(REG_FLAG) $(SPMV_SRCS) -o $(SPMV_TARGET)
+
+run_spmv: $(SPMV_TARGET)
+	./$(SPMV_TARGET)
+
 clean:
-	rm -f $(TARGET) $(PAPER_TARGET) $(BENCH_TARGET)
+	rm -f $(TARGET) $(PAPER_TARGET) $(BENCH_TARGET) $(SPMV_TARGET)
