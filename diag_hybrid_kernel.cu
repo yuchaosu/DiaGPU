@@ -27,6 +27,7 @@
 #include <climits>
 #include <map>
 #include <numeric>
+#include <set>
 #include <vector>
 
 /* ============================================================
@@ -138,6 +139,12 @@ hybrid_compute_kernel(HybridKernelArgs args)
         /* Double-buffer pointers. */
         float* buf[2] = { smem, smem + buf_floats };
 
+        const int chunk_b        = task.use_b_smem
+                                 ? ((HYBRID_TILE + task.spread_sc + 3) & ~3)
+                                 : 0;
+        float* smem_B            = smem + 2 * buf_floats;
+        int*   smem_B_lookup     = reinterpret_cast<int*>(smem_B + task.b_count * chunk_b);
+
         /* Load C diagonal metadata into registers. */
         int c_offset[HYBRID_DIAGS_PER_CTA];
         int c_sr[HYBRID_DIAGS_PER_CTA];
@@ -153,6 +160,27 @@ hybrid_compute_kernel(HybridKernelArgs args)
                 c_len[ki]    = cd.length;
                 c_start[ki]  = cd.values_start;
             }
+        }
+
+        int c_sc[HYBRID_DIAGS_PER_CTA];
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+            if (ki < task.c_count)
+                c_sc[ki] = (c_offset[ki] >= 0) ? c_offset[ki] : 0;
+
+        /* Initialize smem_B_lookup once per task. */
+        if (task.use_b_smem) {
+            /* Fill with -1 */
+            for (int i = tid; i < task.b_d_range; i += HYBRID_BLOCK)
+                smem_B_lookup[i] = -1;
+            __syncthreads();
+            /* Map d_b → smem slot */
+            for (int sb = tid; sb < task.b_count; sb += HYBRID_BLOCK) {
+                const int bi  = args.b_contrib[task.b_begin + sb];
+                const int d_b = args.B_offsets[bi];
+                smem_B_lookup[d_b - task.b_d_min] = sb;
+            }
+            __syncthreads();
         }
 
         /* ============================================================
@@ -189,6 +217,36 @@ hybrid_compute_kernel(HybridKernelArgs args)
             cp_async_commit();                                           \
         } while (0)
 
+        #define LOAD_B_TILE(p_begin_val)                                            \
+        do {                                                                        \
+            if (task.use_b_smem) {                                                  \
+                for (int sb = 0; sb < task.b_count; ++sb) {                        \
+                    const int bi     = args.b_contrib[task.b_begin + sb];          \
+                    const int d_b    = args.B_offsets[bi];                         \
+                    const int b_len  = args.B_lengths[bi];                         \
+                    const int b_st   = args.B_starts[bi];                          \
+                    const int bp_min = task.min_c_sc + (p_begin_val) - max(0,d_b);\
+                    float* dst = smem_B + sb * chunk_b;                            \
+                    const int cb4 = chunk_b >> 2;                                  \
+                    for (int j = tid; j < cb4; j += HYBRID_BLOCK) {               \
+                        const int i0 = j << 2;                                     \
+                        float4 v;                                                   \
+                        int p0 = bp_min + i0;                                      \
+                        v.x = (p0   >= 0 && p0   < b_len) ?                       \
+                              args.B_vals[b_st + p0]   : 0.f;                     \
+                        v.y = (p0+1 >= 0 && p0+1 < b_len) ?                       \
+                              args.B_vals[b_st + p0+1] : 0.f;                     \
+                        v.z = (p0+2 >= 0 && p0+2 < b_len) ?                       \
+                              args.B_vals[b_st + p0+2] : 0.f;                     \
+                        v.w = (p0+3 >= 0 && p0+3 < b_len) ?                       \
+                              args.B_vals[b_st + p0+3] : 0.f;                     \
+                        *reinterpret_cast<float4*>(dst + i0) = v;                  \
+                    }                                                               \
+                }                                                                   \
+                __syncthreads();                                                    \
+            }                                                                       \
+        } while(0)
+
         /* ============================================================
          * Double-buffered tile loop.
          *
@@ -205,6 +263,7 @@ hybrid_compute_kernel(HybridKernelArgs args)
             LOAD_A_TILE(0, 0);
             cp_async_wait_all();
             __syncthreads();
+            LOAD_B_TILE(0);
         }
 
         for (int tile = 0; tile < n_tiles; ++tile) {
@@ -266,23 +325,33 @@ hybrid_compute_kernel(HybridKernelArgs args)
                     if (!active[ki]) continue;  /* single branch */
                     #pragma unroll
                     for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
-                        const int bi = args.B_lookup[
-                            c_offset[ki] - da_g[u] + blb];
-                        if (bi < 0) continue;  /* sparsity check */
+                        if (task.use_b_smem) {
+                            const int d_b = c_offset[ki] - da_g[u];
+                            const int rel = d_b - task.b_d_min;
+                            const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                                          ? smem_B_lookup[rel] : -1;
+                            if (sb < 0) continue;
+                            acc[ki] += av_g[u][ki]
+                                     * smem_B[sb * chunk_b + c_sc[ki] - task.min_c_sc + tid];
+                        } else {
+                            const int bi = args.B_lookup[
+                                c_offset[ki] - da_g[u] + blb];
+                            if (bi < 0) continue;  /* sparsity check */
 
-                        const int d_b   = c_offset[ki] - da_g[u];
-                        const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                        const int b_len = args.B_lengths[bi];
-                        const int b_pos =
-                            (c_sr[ki] + p_begin + tid + da_g[u])
-                            - b_sr;
-                        /* Clamp + predicate: no branch for bounds. */
-                        const int safe  = max(0, min(b_pos, b_len - 1));
-                        const float mask = (b_pos >= 0 && b_pos < b_len)
-                                         ? 1.0f : 0.0f;
-                        acc[ki] += av_g[u][ki]
-                                 * args.B_vals[args.B_starts[bi] + safe]
-                                 * mask;
+                            const int d_b   = c_offset[ki] - da_g[u];
+                            const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                            const int b_len = args.B_lengths[bi];
+                            const int b_pos =
+                                (c_sr[ki] + p_begin + tid + da_g[u])
+                                - b_sr;
+                            /* Clamp + predicate: no branch for bounds. */
+                            const int safe  = max(0, min(b_pos, b_len - 1));
+                            const float mask = (b_pos >= 0 && b_pos < b_len)
+                                             ? 1.0f : 0.0f;
+                            acc[ki] += av_g[u][ki]
+                                     * args.B_vals[args.B_starts[bi] + safe]
+                                     * mask;
+                        }
                     }
                 }
             }
@@ -298,21 +367,32 @@ hybrid_compute_kernel(HybridKernelArgs args)
 
                     const float a_val = cur_buf[
                         s * chunk + c_sr[ki] - task.min_c_sr + tid];
-                    const int bi = args.B_lookup[
-                        c_offset[ki] - d_a + blb];
-                    if (bi < 0) continue;
 
-                    const int d_b   = c_offset[ki] - d_a;
-                    const int b_sr  = (d_b >= 0) ? 0 : -d_b;
-                    const int b_len = args.B_lengths[bi];
-                    const int b_pos =
-                        (c_sr[ki] + p_begin + tid + d_a) - b_sr;
-                    const int safe  = max(0, min(b_pos, b_len - 1));
-                    const float mask = (b_pos >= 0 && b_pos < b_len)
-                                     ? 1.0f : 0.0f;
-                    acc[ki] += a_val
-                             * args.B_vals[args.B_starts[bi] + safe]
-                             * mask;
+                    if (task.use_b_smem) {
+                        const int d_b = c_offset[ki] - d_a;
+                        const int rel = d_b - task.b_d_min;
+                        const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                                      ? smem_B_lookup[rel] : -1;
+                        if (sb < 0) continue;
+                        acc[ki] += a_val
+                                 * smem_B[sb * chunk_b + c_sc[ki] - task.min_c_sc + tid];
+                    } else {
+                        const int bi = args.B_lookup[
+                            c_offset[ki] - d_a + blb];
+                        if (bi < 0) continue;
+
+                        const int d_b   = c_offset[ki] - d_a;
+                        const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                        const int b_len = args.B_lengths[bi];
+                        const int b_pos =
+                            (c_sr[ki] + p_begin + tid + d_a) - b_sr;
+                        const int safe  = max(0, min(b_pos, b_len - 1));
+                        const float mask = (b_pos >= 0 && b_pos < b_len)
+                                         ? 1.0f : 0.0f;
+                        acc[ki] += a_val
+                                 * args.B_vals[args.B_starts[bi] + safe]
+                                 * mask;
+                    }
                 }
             }
 
@@ -342,11 +422,13 @@ hybrid_compute_kernel(HybridKernelArgs args)
             if (tile + 1 < n_tiles) {
                 cp_async_wait_all();
                 __syncthreads();
+                LOAD_B_TILE((tile + 1) * HYBRID_TILE);
             }
             cur = 1 - cur;
         }
 
         #undef LOAD_A_TILE
+        #undef LOAD_B_TILE
 
         /* Sync before next grid-stride task. */
         __syncthreads();
@@ -416,6 +498,242 @@ hybrid_reduce_kernel(HybridKernelArgs args)
 }
 
 /* ============================================================
+ * HEAVY COMPUTATION KERNEL — position-tiled, streaming A
+ *
+ * Design: each CTA owns ONE exclusive output tile [tile_p_begin, +TILE).
+ * No other CTA writes to the same C elements → no partial_buf, no reduce.
+ *
+ * A diagonals that don't fit in smem are streamed in batches (a_smem_cap
+ * diagonals per batch).  B is loaded into smem once per task (before the
+ * A-batch loop) and reused across all A batches — genuine B reuse.
+ *
+ * Smem layout:
+ *   [0 .. a_smem_cap*chunk - 1]         single A buffer
+ *   [above .. +b_count*chunk_b - 1]     B smem  (if use_b_smem)
+ *   [above .. +b_d_range_padded - 1]    smem_B_lookup  (int[])
+ * ============================================================ */
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_heavy_kernel(HybridKernelArgs args)
+{
+    const int tid = static_cast<int>(threadIdx.x);
+    const int blb = args.b_lookup_base;
+
+    extern __shared__ float smem[];
+
+    for (int task_id = static_cast<int>(blockIdx.x);
+         task_id < args.n_heavy;
+         task_id += static_cast<int>(gridDim.x))
+    {
+        const HybridTask task = args.tasks[task_id];
+
+        const int chunk      = ((HYBRID_TILE + task.spread) + 3) & ~3;
+        const int a_smem_cap = task.a_smem_cap;
+        const int chunk_b    = task.use_b_smem
+                             ? ((HYBRID_TILE + task.spread_sc + 3) & ~3) : 0;
+
+        float* smem_A        = smem;
+        float* smem_B        = smem + a_smem_cap * chunk;
+        int*   smem_B_lookup = reinterpret_cast<int*>(smem_B + task.b_count * chunk_b);
+
+        /* Load C diagonal metadata into registers. */
+        int c_offset[HYBRID_DIAGS_PER_CTA];
+        int c_sr[HYBRID_DIAGS_PER_CTA];
+        int c_len[HYBRID_DIAGS_PER_CTA];
+        int c_start[HYBRID_DIAGS_PER_CTA];
+        int c_sc[HYBRID_DIAGS_PER_CTA];
+
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+            if (ki < task.c_count) {
+                const HybridCDiag cd = args.c_diags[task.c_begin + ki];
+                c_offset[ki] = cd.c_offset;
+                c_sr[ki]     = cd.c_sr;
+                c_len[ki]    = cd.length;
+                c_start[ki]  = cd.values_start;
+                c_sc[ki]     = (cd.c_offset >= 0) ? cd.c_offset : 0;
+            }
+        }
+
+        /* Init smem_B_lookup once per task. */
+        if (task.use_b_smem) {
+            for (int i = tid; i < task.b_d_range; i += HYBRID_BLOCK)
+                smem_B_lookup[i] = -1;
+            __syncthreads();
+            for (int sb = tid; sb < task.b_count; sb += HYBRID_BLOCK) {
+                const int bi  = args.b_contrib[task.b_begin + sb];
+                smem_B_lookup[args.B_offsets[bi] - task.b_d_min] = sb;
+            }
+            __syncthreads();
+        }
+
+        /* This CTA's exclusive position tile. */
+        const int p_begin = task.tile_p_begin;
+
+        /* Active mask — fixed for all A batches. */
+        bool active[HYBRID_DIAGS_PER_CTA];
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+            active[ki] = (ki < task.c_count) && (p_begin + tid < c_len[ki]);
+
+        float acc[HYBRID_DIAGS_PER_CTA];
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) acc[ki] = 0.0f;
+
+        /* Load B into smem once (reused across all A batches). */
+        if (task.use_b_smem) {
+            for (int sb = 0; sb < task.b_count; ++sb) {
+                const int bi    = args.b_contrib[task.b_begin + sb];
+                const int d_b   = args.B_offsets[bi];
+                const int b_len = args.B_lengths[bi];
+                const int b_st  = args.B_starts[bi];
+                const int bp_min = task.min_c_sc + p_begin - max(0, d_b);
+                float* dst = smem_B + sb * chunk_b;
+                const int cb4 = chunk_b >> 2;
+                for (int j = tid; j < cb4; j += HYBRID_BLOCK) {
+                    const int i0 = j << 2;
+                    float4 v;
+                    int p0 = bp_min + i0;
+                    v.x = (p0   >= 0 && p0   < b_len) ? args.B_vals[b_st + p0]   : 0.f;
+                    v.y = (p0+1 >= 0 && p0+1 < b_len) ? args.B_vals[b_st + p0+1] : 0.f;
+                    v.z = (p0+2 >= 0 && p0+2 < b_len) ? args.B_vals[b_st + p0+2] : 0.f;
+                    v.w = (p0+3 >= 0 && p0+3 < b_len) ? args.B_vals[b_st + p0+3] : 0.f;
+                    *reinterpret_cast<float4*>(dst + i0) = v;
+                }
+            }
+            __syncthreads();
+        }
+
+        /* Stream A diagonals through smem in batches. */
+        const int total_a = task.a_count;
+        const int a_begin = task.a_begin;
+        const int chunk4  = chunk >> 2;
+
+        for (int a_off = 0; a_off < total_a; a_off += a_smem_cap) {
+            const int a_batch = min(a_smem_cap, total_a - a_off);
+
+            /* Load A batch into smem_A (single buffer, float4 vectorised). */
+            for (int s = 0; s < a_batch; ++s) {
+                const int ai    = args.a_contrib[a_begin + a_off + s];
+                const int d_a   = args.A_offsets[ai];
+                const int a_sr  = (d_a >= 0) ? 0 : -d_a;
+                const int base  = task.min_c_sr - a_sr + p_begin;
+                const int a_len = args.A_lengths[ai];
+                const int a_st  = args.A_starts[ai];
+                float* dst = smem_A + s * chunk;
+                for (int j = tid; j < chunk4; j += HYBRID_BLOCK) {
+                    const int i0 = j << 2;
+                    float4 v;
+                    int p0 = base + i0;
+                    v.x = (p0   >= 0 && p0   < a_len) ? args.A_vals[a_st + p0]   : 0.f;
+                    v.y = (p0+1 >= 0 && p0+1 < a_len) ? args.A_vals[a_st + p0+1] : 0.f;
+                    v.z = (p0+2 >= 0 && p0+2 < a_len) ? args.A_vals[a_st + p0+2] : 0.f;
+                    v.w = (p0+3 >= 0 && p0+3 < a_len) ? args.A_vals[a_st + p0+3] : 0.f;
+                    *reinterpret_cast<float4*>(dst + i0) = v;
+                }
+            }
+            __syncthreads();
+
+            /* Accumulate (same inner loop as corner kernel). */
+            const int a_main = a_batch & ~(HYBRID_A_UNROLL - 1);
+
+            for (int s = 0; s < a_main; s += HYBRID_A_UNROLL) {
+                int   da_g[HYBRID_A_UNROLL];
+                float av_g[HYBRID_A_UNROLL][HYBRID_DIAGS_PER_CTA];
+
+                #pragma unroll
+                for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
+                    const int ai = args.a_contrib[a_begin + a_off + s + u];
+                    da_g[u] = args.A_offsets[ai];
+                    #pragma unroll
+                    for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+                        av_g[u][ki] = smem_A[(s + u) * chunk
+                                             + c_sr[ki] - task.min_c_sr + tid];
+                }
+
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                    if (!active[ki]) continue;
+                    #pragma unroll
+                    for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
+                        if (task.use_b_smem) {
+                            const int d_b = c_offset[ki] - da_g[u];
+                            const int rel = d_b - task.b_d_min;
+                            const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                                          ? smem_B_lookup[rel] : -1;
+                            if (sb < 0) continue;
+                            acc[ki] += av_g[u][ki]
+                                     * smem_B[sb * chunk_b
+                                              + c_sc[ki] - task.min_c_sc + tid];
+                        } else {
+                            const int bi = args.B_lookup[
+                                c_offset[ki] - da_g[u] + blb];
+                            if (bi < 0) continue;
+                            const int d_b   = c_offset[ki] - da_g[u];
+                            const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                            const int b_len = args.B_lengths[bi];
+                            const int b_pos = (c_sr[ki] + p_begin + tid
+                                               + da_g[u]) - b_sr;
+                            const int safe  = max(0, min(b_pos, b_len - 1));
+                            const float mask = (b_pos >= 0 && b_pos < b_len)
+                                             ? 1.0f : 0.0f;
+                            acc[ki] += av_g[u][ki]
+                                     * args.B_vals[args.B_starts[bi] + safe]
+                                     * mask;
+                        }
+                    }
+                }
+            }
+
+            /* Remainder (< HYBRID_A_UNROLL). */
+            for (int s = a_main; s < a_batch; ++s) {
+                const int ai  = args.a_contrib[a_begin + a_off + s];
+                const int d_a = args.A_offsets[ai];
+                #pragma unroll
+                for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) {
+                    if (!active[ki]) continue;
+                    const float a_val = smem_A[s * chunk
+                                               + c_sr[ki] - task.min_c_sr + tid];
+                    if (task.use_b_smem) {
+                        const int d_b = c_offset[ki] - d_a;
+                        const int rel = d_b - task.b_d_min;
+                        const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                                      ? smem_B_lookup[rel] : -1;
+                        if (sb < 0) continue;
+                        acc[ki] += a_val
+                                 * smem_B[sb * chunk_b
+                                          + c_sc[ki] - task.min_c_sc + tid];
+                    } else {
+                        const int bi = args.B_lookup[c_offset[ki] - d_a + blb];
+                        if (bi < 0) continue;
+                        const int d_b   = c_offset[ki] - d_a;
+                        const int b_sr  = (d_b >= 0) ? 0 : -d_b;
+                        const int b_len = args.B_lengths[bi];
+                        const int b_pos = (c_sr[ki] + p_begin + tid + d_a) - b_sr;
+                        const int safe  = max(0, min(b_pos, b_len - 1));
+                        const float mask = (b_pos >= 0 && b_pos < b_len)
+                                         ? 1.0f : 0.0f;
+                        acc[ki] += a_val
+                                 * args.B_vals[args.B_starts[bi] + safe]
+                                 * mask;
+                    }
+                }
+            }
+
+            /* Sync before next A-batch load (skip after last batch). */
+            if (a_off + a_smem_cap < total_a) __syncthreads();
+        }
+
+        /* Direct write — each thread owns [p_begin+tid] exclusively. */
+        #pragma unroll
+        for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki)
+            if (active[ki])
+                args.C_vals[c_start[ki] + p_begin + tid] = acc[ki];
+
+        __syncthreads();  /* before next grid-stride task */
+    }
+}
+
+/* ============================================================
  * build_hybrid_plan
  *
  * Host-side preprocessing.
@@ -480,6 +798,17 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
         const int spread = max_c_sr - min_c_sr;
         const int chunk  = ((HYBRID_TILE + spread) + 3) & ~3; /* 4-aligned for float4 */
 
+        /* --- B smem info --- */
+        int min_c_sc_g = INT_MAX, max_c_sc_g = 0;
+        for (int ki = 0; ki < g_count; ++ki) {
+            const int d_c = plan.c_diags[g_base + ki].c_offset;
+            const int c_sc = (d_c >= 0) ? d_c : 0;
+            min_c_sc_g = std::min(min_c_sc_g, c_sc);
+            max_c_sc_g = std::max(max_c_sc_g, c_sc);
+        }
+        const int spread_sc_g = max_c_sc_g - min_c_sc_g;
+        const int chunk_b_g   = ((HYBRID_TILE + spread_sc_g) + 3) & ~3;
+
         /* Find contributing A diagonals for this group:
          * ai contributes if any C diagonal in the group has a valid
          * B partner for d_b = c_offset[ki] - A_offsets[ai]. */
@@ -499,11 +828,56 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
         }
 
         const int total_a = static_cast<int>(group_a_indices.size());
+
+        /* Unique B diagonals for this group. */
+        std::vector<int> group_b_indices;
+        {
+            std::set<int> b_set;
+            for (int ai : group_a_indices) {
+                const int d_a = A.offsets[ai];
+                for (int ki = 0; ki < g_count; ++ki) {
+                    const int d_b   = plan.c_diags[g_base + ki].c_offset - d_a;
+                    const int b_idx = d_b + n_m_1;
+                    if (b_idx >= 0 && b_idx < 2 * N - 1 && b_lookup[b_idx] >= 0)
+                        b_set.insert(b_lookup[b_idx]);
+                }
+            }
+            group_b_indices.assign(b_set.begin(), b_set.end());
+            /* Sort by d_b for sequential smem slot assignment. */
+            std::sort(group_b_indices.begin(), group_b_indices.end(),
+                      [&](int a, int b){ return B.offsets[a] < B.offsets[b]; });
+        }
+        const int b_count_g = static_cast<int>(group_b_indices.size());
+
+        int b_d_min_g = 0, b_d_max_g = 0, b_d_range_g = 0;
+        if (b_count_g > 0) {
+            b_d_min_g   = B.offsets[group_b_indices.front()];
+            b_d_max_g   = B.offsets[group_b_indices.back()];
+            b_d_range_g = b_d_max_g - b_d_min_g + 1;
+        }
+        const int b_d_range_pad_g  = (b_d_range_g + 3) & ~3;
+        const int b_smem_bytes_g   = (b_count_g * chunk_b_g + b_d_range_pad_g)
+                                   * static_cast<int>(sizeof(float));
+        const bool use_b_smem_g    = (b_smem_bytes_g > 0)
+                                   && (b_smem_bytes_g <= HYBRID_SMEM_BUDGET / 2);
+
+        /* Effective A budget with/without B smem. */
+        const int a_budget_g = use_b_smem_g
+                             ? (HYBRID_SMEM_BUDGET - b_smem_bytes_g)
+                             : HYBRID_SMEM_BUDGET;
+
+        /* B contrib: allocated once per group (shared by all partitions). */
+        const int b_base_g = static_cast<int>(plan.b_contrib.size());
+        if (use_b_smem_g) {
+            for (int bi : group_b_indices)
+                plan.b_contrib.push_back(bi);
+        }
+
         /* Double-buffered: need 2 × a_count × chunk floats. */
         const int smem_bytes  = 2 * total_a * chunk
                                 * static_cast<int>(sizeof(float));
 
-        const bool fits = (smem_bytes <= HYBRID_SMEM_BUDGET);
+        const bool fits = (smem_bytes <= a_budget_g);
 
         if (fits) {
             /* ---- Corner group: 1 task, direct write ---- */
@@ -521,68 +895,73 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
             t.a_count    = total_a;
             t.is_direct  = 1;
             t.out_offset = 0;  /* unused for direct */
+            t.min_c_sc   = min_c_sc_g;
+            t.spread_sc  = spread_sc_g;
+            t.use_b_smem = use_b_smem_g ? 1 : 0;
+            t.b_d_min    = b_d_min_g;
+            t.b_d_range  = b_d_range_g;
+            t.b_begin      = use_b_smem_g ? b_base_g : 0;
+            t.b_count      = use_b_smem_g ? b_count_g : 0;
+            t.tile_p_begin = 0;      /* unused for corner (full tile loop) */
+            t.a_smem_cap   = total_a; /* all A fits in one smem load */
             plan.corner_tasks.push_back(t);
 
-            plan.corner_max_smem = std::max(plan.corner_max_smem, smem_bytes);
+            const int total_smem = smem_bytes
+                                 + (use_b_smem_g ? b_smem_bytes_g : 0);
+            plan.corner_max_smem = std::max(plan.corner_max_smem, total_smem);
 
         } else {
-            /* ---- Heavy group: partition A contributors ---- */
-            /* Half the budget per buffer (double-buffered). */
-            const int max_a_per_part =
-                HYBRID_SMEM_BUDGET / (2 * chunk * static_cast<int>(sizeof(float)));
-            const int n_partitions =
-                (total_a + max_a_per_part - 1) / max_a_per_part;
+            /* ---- Heavy group: one task per output position tile ----
+             *
+             * Each task owns an exclusive tile [tile_p_begin, +TILE).
+             * No two CTAs touch the same C element → no partial_buf,
+             * no reduction.  The heavy kernel streams ALL A diagonals
+             * through smem in batches of a_smem_cap diagonals.
+             *
+             * Single-buffered A smem (no double-buffer needed since
+             * the position is fixed): a_smem_cap = a_budget / (chunk*4).
+             * This is 2× the old max_a_per_part, so fewer batches. */
+            const int a_smem_cap = std::max(1,
+                a_budget_g / (chunk * static_cast<int>(sizeof(float))));
 
-            /* partial_buf layout for this group:
-             *   partition p, C diagonal ki, position pos →
-             *   partial_buf[group_base
-             *               + p * (c_count * padded)
-             *               + ki * padded + pos]
-             * where padded = ceil(max_c_len / TILE) * TILE. */
-            const int padded =
-                (max_c_len + HYBRID_TILE - 1) / HYBRID_TILE * HYBRID_TILE;
-            const int partition_stride = g_count * padded;
-            const int group_partial_base = partial_offset;
+            /* A indices stored once for the whole group. */
+            const int a_base_g = static_cast<int>(plan.a_contrib.size());
+            for (int ai : group_a_indices)
+                plan.a_contrib.push_back(ai);
 
-            for (int part = 0; part < n_partitions; ++part) {
-                const int a_off   = part * max_a_per_part;
-                const int a_count = std::min(max_a_per_part,
-                                              total_a - a_off);
-                const int a_base =
-                    static_cast<int>(plan.a_contrib.size());
-                for (int j = 0; j < a_count; ++j)
-                    plan.a_contrib.push_back(group_a_indices[a_off + j]);
+            const int n_tiles =
+                (max_c_len + HYBRID_TILE - 1) / HYBRID_TILE;
 
+            for (int tile = 0; tile < n_tiles; ++tile) {
                 HybridTask t;
-                t.c_begin    = g_base;
-                t.c_count    = g_count;
-                t.min_c_sr   = min_c_sr;
-                t.spread     = spread;
-                t.max_c_len  = max_c_len;
-                t.a_begin    = a_base;
-                t.a_count    = a_count;
-                t.is_direct  = 0;
-                t.out_offset = group_partial_base
-                               + part * partition_stride;
+                t.c_begin      = g_base;
+                t.c_count      = g_count;
+                t.min_c_sr     = min_c_sr;
+                t.spread       = spread;
+                t.max_c_len    = max_c_len;
+                t.a_begin      = a_base_g;
+                t.a_count      = total_a;
+                t.is_direct    = 1;
+                t.out_offset   = 0;
+                t.min_c_sc     = min_c_sc_g;
+                t.spread_sc    = spread_sc_g;
+                t.use_b_smem   = use_b_smem_g ? 1 : 0;
+                t.b_d_min      = b_d_min_g;
+                t.b_d_range    = b_d_range_g;
+                t.b_begin      = use_b_smem_g ? b_base_g : 0;
+                t.b_count      = use_b_smem_g ? b_count_g : 0;
+                t.tile_p_begin = tile * HYBRID_TILE;
+                t.a_smem_cap   = a_smem_cap;
                 plan.heavy_tasks.push_back(t);
-
-                const int part_smem =
-                    2 * a_count * chunk * static_cast<int>(sizeof(float));
-                plan.heavy_max_smem = std::max(plan.heavy_max_smem, part_smem);
             }
 
-            partial_offset += n_partitions * partition_stride;
-
-            /* Reduction task for this group. */
-            HybridReduceTask rt;
-            rt.c_begin      = g_base;
-            rt.c_count      = g_count;
-            rt.min_c_sr     = min_c_sr;
-            rt.spread       = spread;
-            rt.max_c_len    = max_c_len;
-            rt.partial_base = group_partial_base;
-            rt.num_partials = n_partitions;
-            plan.reduce_tasks.push_back(rt);
+            /* smem = single A buffer + B smem */
+            const int h_smem = (a_smem_cap * chunk
+                                + (use_b_smem_g ? b_count_g * chunk_b_g
+                                                  + b_d_range_pad_g : 0))
+                               * static_cast<int>(sizeof(float));
+            plan.heavy_max_smem = std::max(plan.heavy_max_smem, h_smem);
+            /* partial_buf_size unchanged (stays 0 for heavy groups now). */
         }
     }
 
@@ -594,17 +973,15 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
  * launch_hybrid
  *
  * Up to three kernel launches on the same stream:
- *   1. Corner kernel  — hybrid_compute_kernel<true>  (direct → C_vals)
- *   2. Heavy kernel   — hybrid_compute_kernel<false> (→ partial_buf)
- *   3. Reduce kernel  — hybrid_reduce_kernel         (partial_buf → C_vals)
+ *   1. Corner kernel — hybrid_compute_kernel<true>  (all A fits, tile loop)
+ *   2. Heavy kernel  — hybrid_heavy_kernel           (position-tiled, A stream)
  *
- * Separate launches let each use its own smem allocation:
- *   corner gets corner_max_smem (small → more L1 for B loads),
- *   heavy  gets heavy_max_smem  (large → many A diags per partition).
+ * Separate launches use different smem allocations:
+ *   corner: 2×A double-buffer + B smem (corner_max_smem)
+ *   heavy:  1×A single-buffer + B smem (heavy_max_smem)
  *
- * Same-stream FIFO ordering guarantees heavy finishes before reduce.
- * Corner and heavy are independent and could run concurrently on
- * separate streams if desired.
+ * Corner and heavy are independent and can run concurrently on
+ * separate streams if desired.  No reduction kernel needed.
  * ============================================================ */
 void launch_hybrid(HybridKernelArgs args, cudaStream_t stream)
 {
@@ -630,24 +1007,18 @@ void launch_hybrid(HybridKernelArgs args, cudaStream_t stream)
             <<<grid, HYBRID_BLOCK, smem, stream>>>(corner_args);
     }
 
-    /* ---- Heavy kernel (DIRECT=false) ---- */
+    /* ---- Heavy kernel — position-tiled, direct write, no reduction ---- */
     if (args.n_heavy > 0) {
         const int grid = std::min(target_blocks, args.n_heavy);
         const int smem = std::min(args.heavy_max_smem, dev_max_smem);
-        cudaFuncSetAttribute(hybrid_compute_kernel<false>,
+        cudaFuncSetAttribute(hybrid_heavy_kernel,
             cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
 
         HybridKernelArgs heavy_args = args;
         heavy_args.tasks   = args.heavy_tasks;
         heavy_args.n_tasks = args.n_heavy;
-        hybrid_compute_kernel<false>
+        hybrid_heavy_kernel
             <<<grid, HYBRID_BLOCK, smem, stream>>>(heavy_args);
     }
-
-    /* ---- Reduction kernel (after heavy, same stream) ---- */
-    if (args.n_reduce > 0) {
-        const int grid = std::min(target_blocks, args.n_reduce);
-        hybrid_reduce_kernel
-            <<<grid, HYBRID_BLOCK, 0, stream>>>(args);
-    }
+    /* No reduction kernel — each CTA owns exclusive output positions. */
 }

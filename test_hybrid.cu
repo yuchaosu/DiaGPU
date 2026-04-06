@@ -339,6 +339,8 @@ static bool run_test(const char* name,
     HybridReduceTask*  d_reduce       = upload(plan.reduce_tasks);
     HybridCDiag*       d_cdiags       = upload(plan.c_diags);
     int*               d_acontrib     = upload(plan.a_contrib);
+    int*               d_bcontrib     = upload(plan.b_contrib.empty()
+                                              ? std::vector<int>{0} : plan.b_contrib);
 
     float* d_C_vals = nullptr;
     CUDA_CHECK(cudaMalloc(&d_C_vals,
@@ -362,6 +364,7 @@ static bool run_test(const char* name,
     kargs.c_diags       = d_cdiags;
     kargs.n_c_diags     = static_cast<int>(plan.c_diags.size());
     kargs.a_contrib     = d_acontrib;
+    kargs.b_contrib     = d_bcontrib;
     kargs.A_vals        = d_A_vals;
     kargs.A_offsets     = d_A_offsets;
     kargs.A_starts      = d_A_starts;
@@ -583,7 +586,7 @@ static bool run_test(const char* name,
     cudaFree(d_B_lookup);
     cudaFree(d_corner_tasks); cudaFree(d_heavy_tasks);
     cudaFree(d_reduce);
-    cudaFree(d_cdiags);    cudaFree(d_acontrib);
+    cudaFree(d_cdiags);    cudaFree(d_acontrib);  cudaFree(d_bcontrib);
     cudaFree(d_C_vals);
     if (d_partial) cudaFree(d_partial);
 

@@ -83,12 +83,22 @@ struct HybridTask {
     int max_c_len;     // max C diagonal length in group (for tile loop bound)
     int a_begin;       // index into a_contrib[]
     int a_count;       // number of A diags in this partition
-    int is_direct;     // 1 = write to C_vals, 0 = write to partial_buf
-    int out_offset;    // base offset into partial_buf (heavy only)
+    int is_direct;     // 1 = write to C_vals (always 1 now)
+    int out_offset;    // unused (kept for struct layout compat)
+    /* B-smem staging (set by build_hybrid_plan) */
+    int min_c_sc;     // min start column across C diagonals
+    int spread_sc;    // max_c_sc - min_c_sc
+    int b_begin;      // index into b_contrib[]
+    int b_count;      // unique B diagonals needed
+    int b_d_min;      // min d_b among staged B diagonals
+    int b_d_range;    // b_d_max - b_d_min + 1
+    int use_b_smem;   // 1 = B staged in smem
+    /* Heavy-kernel fields (set for heavy tasks only) */
+    int tile_p_begin; // starting position for this CTA's exclusive output tile
+    int a_smem_cap;   // max A diagonals per single smem load (heavy kernel)
 };
 
-/* Reduction task: sums partial_buf partitions into C_vals.
- * One per (group, tile position) for heavy groups. */
+/* Reduction task: retained for API compat; no longer generated. */
 struct HybridReduceTask {
     int c_begin;       // first index into c_diags[]
     int c_count;       // C diags in group
@@ -125,6 +135,7 @@ struct HybridKernelArgs {
 
     /* Contributing A diagonal indices per task (flat array) */
     const int*              a_contrib;
+    const int*              b_contrib;  /* flat B diagonal indices per task, indexed by b_begin..b_begin+b_count-1 */
 
     /* A matrix (sorted by offset) */
     const float* A_vals;
@@ -156,6 +167,7 @@ struct HybridPlan {
     std::vector<HybridTask>        heavy_tasks;  // partial_buf tasks
     std::vector<HybridReduceTask>  reduce_tasks; // heavy groups only
     std::vector<int>               a_contrib;    // flat A-diag indices per task
+    std::vector<int>               b_contrib;    /* flat B diagonal indices per task */
     int total_c_values;
     int partial_buf_size;
     int corner_max_smem;  // max dynamic smem across corner tasks
@@ -180,7 +192,13 @@ template <bool DIRECT>
 __global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
 hybrid_compute_kernel(HybridKernelArgs args);
 
-/* Reduction kernel — sums partial_buf → C_vals for heavy groups. */
+/* Heavy kernel — each CTA owns one exclusive position tile and streams all
+ * contributing A diagonals through smem in batches.  Writes directly to
+ * C_vals; no partial_buf or reduction step needed. */
+__global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
+hybrid_heavy_kernel(HybridKernelArgs args);
+
+/* Reduction kernel — retained for API compat; no longer launched. */
 __global__ void __launch_bounds__(HYBRID_BLOCK, HYBRID_BLOCKS_PER_SM)
 hybrid_reduce_kernel(HybridKernelArgs args);
 
