@@ -128,6 +128,7 @@ ClusterPlan build_cluster_plan(const DiagMatrix& A, const DiagMatrix& B,
             const int b_base_rank = rank_geom[rank].b_begin;
 
             /* Per-A-partition B metadata for this rank. */
+            int max_b_d_range_rank = 0;  // track actual max lookup size across partitions
             for (int p = 0; p < n_parts; ++p) {
                 const int a_p_begin = p * CLUSTER_PARTITION_SIZE;
                 const int a_p_end   = std::min(a_p_begin + CLUSTER_PARTITION_SIZE, total_a);
@@ -151,15 +152,18 @@ ClusterPlan build_cluster_plan(const DiagMatrix& A, const DiagMatrix& B,
                 meta.b_d_min   = part_b.empty() ? 0 : B.offsets[part_b.front()];
                 meta.b_d_range = part_b.empty() ? 0
                                : (B.offsets[part_b.back()] - meta.b_d_min + 1);
+                if (meta.b_d_range > max_b_d_range_rank) max_b_d_range_rank = meta.b_d_range;
                 plan.part_b_meta.push_back(meta);
                 for (int bi : part_b) plan.b_contrib.push_back(bi);
             }
 
-            /* Update max_smem. */
+            /* Update max_smem using actual b_d_range for the lookup table.
+             * lpad must cover the widest b_d_range seen across any partition of this rank,
+             * not just max_b_per_part (which bounds the count, not the offset span). */
             const int chunk_a  = (CLUSTER_TILE + spread_all                  + 3) & ~3;
             const int chunk_b  = (CLUSTER_TILE + rank_geom[rank].spread_sc   + 3) & ~3;
             const int max_b_pp = CLUSTER_PARTITION_SIZE + CLUSTER_DIAGS_PER_CTA - 1; // 60
-            const int lpad     = (max_b_pp + 3) & ~3;
+            const int lpad     = (max_b_d_range_rank + 3) & ~3;
             const int smem_needed = static_cast<int>(sizeof(float))
                                   * (CLUSTER_PARTITION_SIZE * chunk_a
                                      + max_b_pp * chunk_b + lpad);
@@ -219,7 +223,9 @@ cluster_kernel(ClusterKernelArgs args)
     const ClusterMeta cmeta   = args.cluster_meta[cluster_abs_idx];
     const ClusterTask task    = args.tasks[blockIdx.x];
 
-    if (task.c_count == 0) return;
+    /* All CTAs must reach every cluster.sync() regardless of c_count.
+     * Empty ranks (c_count == 0) participate in syncs but do no accumulation or output.
+     * active[] is all-false for empty ranks, guarding all writes. */
 
     /* Shared memory layout (dynamic):
      *   smem_A        : CLUSTER_PARTITION_SIZE × chunk   floats  (rank-0 fills)
