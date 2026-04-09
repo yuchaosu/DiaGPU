@@ -320,6 +320,9 @@ static bool run_test(const char* name,
     int* d_acontrib        = upload(plan.a_contrib);
     int* d_bcontrib        = upload(plan.b_contrib.empty()
                                    ? std::vector<int>{0} : plan.b_contrib);
+    /* upload() returns nullptr for empty vec; safe here because build_hybrid_plan
+     * always emits at least one PartBMeta entry per partition group, so
+     * part_b_meta is non-empty whenever any partition task exists. */
     PartBMeta* d_part_b_meta = upload(plan.part_b_meta);
 
     float* d_C_vals = nullptr;
