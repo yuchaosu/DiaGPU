@@ -63,12 +63,13 @@ hybrid_kernel(HybridKernelArgs args)
         const HybridTask task = args.tasks[task_id];
 
         const int chunk      = ((HYBRID_TILE + task.spread) + 3) & ~3;
-        const int a_smem_cap = task.a_smem_cap;
+        constexpr int a_smem_cap = HYBRID_PARTITION_SIZE;
         const int chunk_b    = (HYBRID_TILE + task.spread_sc + 3) & ~3;
 
+        constexpr int max_b_per_part = a_smem_cap + HYBRID_DIAGS_PER_CTA - 1;
         float* smem_A        = smem;
         float* smem_B        = smem + a_smem_cap * chunk;
-        int*   smem_B_lookup = reinterpret_cast<int*>(smem_B + task.b_count * chunk_b);
+        int*   smem_B_lookup = reinterpret_cast<int*>(smem_B + max_b_per_part * chunk_b);
 
         int c_offset[HYBRID_DIAGS_PER_CTA];
         int c_sr[HYBRID_DIAGS_PER_CTA];
@@ -88,15 +89,6 @@ hybrid_kernel(HybridKernelArgs args)
             }
         }
 
-        for (int i = tid; i < task.b_d_range; i += HYBRID_BLOCK)
-            smem_B_lookup[i] = -1;
-        __syncthreads();
-        for (int sb = tid; sb < task.b_count; sb += HYBRID_BLOCK) {
-            const int bi  = args.b_contrib[task.b_begin + sb];
-            smem_B_lookup[args.B_offsets[bi] - task.b_d_min] = sb;
-        }
-        __syncthreads();
-
         const int p_begin = task.tile_p_begin;
 
         bool active[HYBRID_DIAGS_PER_CTA];
@@ -108,32 +100,50 @@ hybrid_kernel(HybridKernelArgs args)
         #pragma unroll
         for (int ki = 0; ki < HYBRID_DIAGS_PER_CTA; ++ki) acc[ki] = 0.0f;
 
-        for (int sb = 0; sb < task.b_count; ++sb) {
-            const int bi    = args.b_contrib[task.b_begin + sb];
-            const int d_b   = args.B_offsets[bi];
-            const int b_len = args.B_lengths[bi];
-            const int b_st  = args.B_starts[bi];
-            const int bp_min = task.min_c_sc + p_begin - max(0, d_b);
-            float* dst = smem_B + sb * chunk_b;
-            const int cb4 = chunk_b >> 2;
-            for (int j = tid; j < cb4; j += HYBRID_BLOCK) {
-                const int i0 = j << 2;
-                float4 v;
-                int p0 = bp_min + i0;
-                v.x = (p0   >= 0 && p0   < b_len) ? args.B_vals[b_st + p0]   : 0.f;
-                v.y = (p0+1 >= 0 && p0+1 < b_len) ? args.B_vals[b_st + p0+1] : 0.f;
-                v.z = (p0+2 >= 0 && p0+2 < b_len) ? args.B_vals[b_st + p0+2] : 0.f;
-                v.w = (p0+3 >= 0 && p0+3 < b_len) ? args.B_vals[b_st + p0+3] : 0.f;
-                *reinterpret_cast<float4*>(dst + i0) = v;
-            }
-        }
-        __syncthreads();
-
         const int total_a = task.a_count;
         const int a_begin = task.a_begin;
         const int chunk4  = chunk >> 2;
 
         for (int a_off = 0; a_off < total_a; a_off += a_smem_cap) {
+            /* ── Per-partition B load ── */
+            const int p_idx            = a_off / HYBRID_PARTITION_SIZE;
+            const PartBMeta pmeta      = args.part_b_meta[task.part_b_base + p_idx];
+            const int part_b_count     = pmeta.b_count;
+            const int part_b_d_min     = pmeta.b_d_min;
+            const int part_b_d_range   = pmeta.b_d_range;
+            const int part_b_d_range_pad = (part_b_d_range + 3) & ~3;
+
+            for (int i = tid; i < part_b_d_range_pad; i += HYBRID_BLOCK)
+                smem_B_lookup[i] = -1;
+            __syncthreads();
+
+            for (int sb = tid; sb < part_b_count; sb += HYBRID_BLOCK) {
+                const int bi = args.b_contrib[task.b_begin + pmeta.b_begin + sb];
+                smem_B_lookup[args.B_offsets[bi] - part_b_d_min] = sb;
+            }
+            __syncthreads();
+
+            for (int sb = 0; sb < part_b_count; ++sb) {
+                const int bi    = args.b_contrib[task.b_begin + pmeta.b_begin + sb];
+                const int d_b   = args.B_offsets[bi];
+                const int b_len = args.B_lengths[bi];
+                const int b_st  = args.B_starts[bi];
+                const int bp_min = task.min_c_sc + p_begin - max(0, d_b);
+                float* dst = smem_B + sb * chunk_b;
+                const int cb4 = chunk_b >> 2;
+                for (int j = tid; j < cb4; j += HYBRID_BLOCK) {
+                    const int i0 = j << 2;
+                    float4 v;
+                    int p0 = bp_min + i0;
+                    v.x = (p0   >= 0 && p0   < b_len) ? args.B_vals[b_st + p0]   : 0.f;
+                    v.y = (p0+1 >= 0 && p0+1 < b_len) ? args.B_vals[b_st + p0+1] : 0.f;
+                    v.z = (p0+2 >= 0 && p0+2 < b_len) ? args.B_vals[b_st + p0+2] : 0.f;
+                    v.w = (p0+3 >= 0 && p0+3 < b_len) ? args.B_vals[b_st + p0+3] : 0.f;
+                    *reinterpret_cast<float4*>(dst + i0) = v;
+                }
+            }
+            __syncthreads();
+
             const int a_batch = min(a_smem_cap, total_a - a_off);
 
             for (int s = 0; s < a_batch; ++s) {
@@ -179,8 +189,8 @@ hybrid_kernel(HybridKernelArgs args)
                     #pragma unroll
                     for (int u = 0; u < HYBRID_A_UNROLL; ++u) {
                         const int d_b = c_offset[ki] - da_g[u];
-                        const int rel = d_b - task.b_d_min;
-                        const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                        const int rel = d_b - part_b_d_min;
+                        const int sb  = ((unsigned)rel < (unsigned)part_b_d_range)
                                       ? smem_B_lookup[rel] : -1;
                         if (sb < 0) continue;
                         acc[ki] += av_g[u][ki]
@@ -199,8 +209,8 @@ hybrid_kernel(HybridKernelArgs args)
                     const float a_val = smem_A[s * chunk
                                                + c_sr[ki] - task.min_c_sr + tid];
                     const int d_b = c_offset[ki] - d_a;
-                    const int rel = d_b - task.b_d_min;
-                    const int sb  = ((unsigned)rel < (unsigned)task.b_d_range)
+                    const int rel = d_b - part_b_d_min;
+                    const int sb  = ((unsigned)rel < (unsigned)part_b_d_range)
                                   ? smem_B_lookup[rel] : -1;
                     if (sb < 0) continue;
                     acc[ki] += a_val
@@ -209,7 +219,7 @@ hybrid_kernel(HybridKernelArgs args)
                 }
             }
 
-            if (a_off + a_smem_cap < total_a) __syncthreads();
+            __syncthreads();  // ensure smem_A is free before next partition's B-lookup init
         }
 
         #pragma unroll
@@ -294,48 +304,55 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
             }
             if (used) group_a_indices.push_back(ai);
         }
+        std::sort(group_a_indices.begin(), group_a_indices.end(),
+                  [&](int a, int b){ return A.offsets[a] < A.offsets[b]; });
 
-        const int total_a = static_cast<int>(group_a_indices.size());
-
-        std::vector<int> group_b_indices;
-        {
-            std::set<int> b_set;
-            for (int ai : group_a_indices) {
-                const int d_a = A.offsets[ai];
-                for (int ki = 0; ki < g_count; ++ki) {
-                    const int d_b   = plan.c_diags[g_base + ki].c_offset - d_a;
-                    const int b_idx = d_b + n_m_1;
-                    if (b_idx >= 0 && b_idx < 2 * N - 1 && b_lookup[b_idx] >= 0)
-                        b_set.insert(b_lookup[b_idx]);
-                }
-            }
-            group_b_indices.assign(b_set.begin(), b_set.end());
-            std::sort(group_b_indices.begin(), group_b_indices.end(),
-                      [&](int a, int b){ return B.offsets[a] < B.offsets[b]; });
-        }
-        const int b_count_g = static_cast<int>(group_b_indices.size());
-
-        int b_d_min_g = 0, b_d_max_g = 0, b_d_range_g = 0;
-        if (b_count_g > 0) {
-            b_d_min_g   = B.offsets[group_b_indices.front()];
-            b_d_max_g   = B.offsets[group_b_indices.back()];
-            b_d_range_g = b_d_max_g - b_d_min_g + 1;
-        }
-        const int b_d_range_pad_g  = (b_d_range_g + 3) & ~3;
-        const int b_smem_bytes_g   = (b_count_g * chunk_b_g + b_d_range_pad_g)
-                                   * static_cast<int>(sizeof(float));
-
-        const int b_base_g = static_cast<int>(plan.b_contrib.size());
-        for (int bi : group_b_indices)
-            plan.b_contrib.push_back(bi);
-
-        const int a_base_g = static_cast<int>(plan.a_contrib.size());
+        const int a_base_g   = static_cast<int>(plan.a_contrib.size());
         for (int ai : group_a_indices)
             plan.a_contrib.push_back(ai);
 
-        const int a_smem_cap = std::max(1,
-            (HYBRID_SMEM_BUDGET - b_smem_bytes_g)
-            / (chunk * static_cast<int>(sizeof(float))));
+        const int total_a    = static_cast<int>(group_a_indices.size());
+        const int n_parts    = (total_a + HYBRID_PARTITION_SIZE - 1) / HYBRID_PARTITION_SIZE;
+        const int part_b_base_g = static_cast<int>(plan.part_b_meta.size());
+        const int b_base_g   = static_cast<int>(plan.b_contrib.size());
+
+        /* Build PartBMeta for each A partition. */
+        for (int p = 0; p < n_parts; ++p) {
+            const int a_p_begin = p * HYBRID_PARTITION_SIZE;
+            const int a_p_end   = std::min(a_p_begin + HYBRID_PARTITION_SIZE, total_a);
+
+            int d_a_min_p = A.offsets[group_a_indices[a_p_begin]];
+            int d_a_max_p = A.offsets[group_a_indices[a_p_end - 1]];
+
+            int min_d_c = INT_MAX, max_d_c = INT_MIN;
+            for (int ki = 0; ki < g_count; ++ki) {
+                const int d_c = plan.c_diags[g_base + ki].c_offset;
+                min_d_c = std::min(min_d_c, d_c);
+                max_d_c = std::max(max_d_c, d_c);
+            }
+            const int d_b_lo = min_d_c - d_a_max_p;
+            const int d_b_hi = max_d_c - d_a_min_p;
+
+            std::vector<int> part_b;
+            for (int bi = 0; bi < static_cast<int>(B.offsets.size()); ++bi) {
+                const int d_b = B.offsets[bi];
+                if (d_b >= d_b_lo && d_b <= d_b_hi)
+                    part_b.push_back(bi);
+            }
+            std::sort(part_b.begin(), part_b.end(),
+                      [&](int a, int b){ return B.offsets[a] < B.offsets[b]; });
+
+            PartBMeta meta;
+            meta.b_begin   = static_cast<int>(plan.b_contrib.size()) - b_base_g;
+            meta.b_count   = static_cast<int>(part_b.size());
+            meta.b_d_min   = part_b.empty() ? 0 : B.offsets[part_b.front()];
+            meta.b_d_range = part_b.empty() ? 0
+                           : (B.offsets[part_b.back()] - meta.b_d_min + 1);
+            plan.part_b_meta.push_back(meta);
+
+            for (int bi : part_b)
+                plan.b_contrib.push_back(bi);
+        }
 
         const int n_tiles = (max_c_len + HYBRID_TILE - 1) / HYBRID_TILE;
         for (int tile = 0; tile < n_tiles; ++tile) {
@@ -347,20 +364,21 @@ HybridPlan build_hybrid_plan(const DiagMatrix& A,
             t.max_c_len    = max_c_len;
             t.a_begin      = a_base_g;
             t.a_count      = total_a;
-            t.a_smem_cap   = a_smem_cap;
             t.min_c_sc     = min_c_sc_g;
             t.spread_sc    = spread_sc_g;
             t.b_begin      = b_base_g;
-            t.b_count      = b_count_g;
-            t.b_d_min      = b_d_min_g;
-            t.b_d_range    = b_d_range_g;
+            t.part_b_base  = part_b_base_g;
+            t.n_parts      = n_parts;
             t.tile_p_begin = tile * HYBRID_TILE;
             plan.tasks.push_back(t);
         }
 
-        const int smem_needed = (a_smem_cap * chunk
-                                 + b_count_g * chunk_b_g + b_d_range_pad_g)
-                              * static_cast<int>(sizeof(float));
+        const int max_b_per_part = HYBRID_PARTITION_SIZE + HYBRID_DIAGS_PER_CTA - 1;
+        const int lookup_pad     = (max_b_per_part + 3) & ~3;
+        const int smem_needed    = static_cast<int>(sizeof(float))
+                                 * (HYBRID_PARTITION_SIZE * chunk
+                                    + max_b_per_part * chunk_b_g
+                                    + lookup_pad);
         plan.max_smem = std::max(plan.max_smem, smem_needed);
     }
 
