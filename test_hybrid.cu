@@ -301,15 +301,10 @@ static bool run_test(const char* name,
 
     /* ---- 2. Build hybrid plan. ---- */
     HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
-    fprintf(g_out, "**Plan:** corner=%zu  heavy=%zu  reduce=%zu"
-            "  a\\_contrib=%zu  partial\\_buf=%d floats"
-            "  smem corner=%d heavy=%d bytes\n\n",
-            plan.corner_tasks.size(), plan.heavy_tasks.size(),
-            plan.reduce_tasks.size(), plan.a_contrib.size(),
-            plan.partial_buf_size,
-            plan.corner_max_smem, plan.heavy_max_smem);
+    fprintf(g_out, "**Plan:** tasks=%zu  a\\_contrib=%zu  max\\_smem=%d bytes\n\n",
+            plan.tasks.size(), plan.a_contrib.size(), plan.max_smem);
 
-    /* ---- 3. Upload read-only data. ---- */
+    /* ---- 3. Upload data. ---- */
     float* d_A_vals    = upload(A.values);
     int*   d_A_offsets = upload(A.offsets);
     int*   d_A_starts  = upload(A.diag_starts);
@@ -319,76 +314,37 @@ static bool run_test(const char* name,
     int*   d_B_starts  = upload(B.diag_starts);
     int*   d_B_lengths = upload(B.diag_lengths);
 
-    /* Extended B_lookup: size 4N-3, base offset 2*(N-1).
-     * Any d_b in [-(2N-2), 2N-2] indexes safely; out-of-range → -1. */
-    const int blb = 2 * (N - 1);                 /* b_lookup_base */
-    const int bl_size = 4 * N - 3;
-    std::vector<int> b_lookup_ext(bl_size, -1);
-    {
-        auto b_lookup_std = build_b_diag_lookup(B, N);  /* size 2N-1 */
-        /* Copy standard lookup into the centre of the extended array.
-         * Standard: index d_b + (N-1) for d_b in [-(N-1), N-1].
-         * Extended: index d_b + 2*(N-1). Offset = (N-1).              */
-        for (int i = 0; i < static_cast<int>(b_lookup_std.size()); ++i)
-            b_lookup_ext[(N - 1) + i] = b_lookup_std[i];
-    }
-    int* d_B_lookup = upload(b_lookup_ext);
-
-    HybridTask*        d_corner_tasks = upload(plan.corner_tasks);
-    HybridTask*        d_heavy_tasks  = upload(plan.heavy_tasks);
-    HybridReduceTask*  d_reduce       = upload(plan.reduce_tasks);
-    HybridCDiag*       d_cdiags       = upload(plan.c_diags);
-    int*               d_acontrib     = upload(plan.a_contrib);
-    int*               d_bcontrib     = upload(plan.b_contrib.empty()
-                                              ? std::vector<int>{0} : plan.b_contrib);
+    HybridTask* d_tasks    = upload(plan.tasks);
+    HybridCDiag* d_cdiags  = upload(plan.c_diags);
+    int* d_acontrib        = upload(plan.a_contrib);
+    int* d_bcontrib        = upload(plan.b_contrib.empty()
+                                   ? std::vector<int>{0} : plan.b_contrib);
 
     float* d_C_vals = nullptr;
     CUDA_CHECK(cudaMalloc(&d_C_vals,
                static_cast<size_t>(plan.total_c_values) * sizeof(float)));
 
-    float* d_partial = nullptr;
-    if (plan.partial_buf_size > 0)
-        CUDA_CHECK(cudaMalloc(&d_partial,
-                   static_cast<size_t>(plan.partial_buf_size) * sizeof(float)));
-
     /* ---- 4. Assemble KernelArgs. ---- */
     HybridKernelArgs kargs = {};
-    kargs.corner_tasks    = d_corner_tasks;
-    kargs.n_corner        = static_cast<int>(plan.corner_tasks.size());
-    kargs.heavy_tasks     = d_heavy_tasks;
-    kargs.n_heavy         = static_cast<int>(plan.heavy_tasks.size());
-    kargs.corner_max_smem = plan.corner_max_smem;
-    kargs.heavy_max_smem  = plan.heavy_max_smem;
-    kargs.reduce_tasks    = d_reduce;
-    kargs.n_reduce        = static_cast<int>(plan.reduce_tasks.size());
-    kargs.c_diags       = d_cdiags;
-    kargs.n_c_diags     = static_cast<int>(plan.c_diags.size());
-    kargs.a_contrib     = d_acontrib;
-    kargs.b_contrib     = d_bcontrib;
-    kargs.A_vals        = d_A_vals;
-    kargs.A_offsets     = d_A_offsets;
-    kargs.A_starts      = d_A_starts;
-    kargs.A_lengths     = d_A_lengths;
-    kargs.A_num_diags   = A.num_diags;
-    kargs.B_vals        = d_B_vals;
-    kargs.B_offsets     = d_B_offsets;
-    kargs.B_starts      = d_B_starts;
-    kargs.B_lengths     = d_B_lengths;
-    kargs.B_lookup      = d_B_lookup;
-    kargs.b_lookup_base = blb;
-    kargs.n             = N;
-    kargs.C_vals        = d_C_vals;
-    kargs.partial_buf   = d_partial;
+    kargs.tasks     = d_tasks;
+    kargs.n_tasks   = static_cast<int>(plan.tasks.size());
+    kargs.max_smem  = plan.max_smem;
+    kargs.c_diags   = d_cdiags;
+    kargs.n_c_diags = static_cast<int>(plan.c_diags.size());
+    kargs.a_contrib = d_acontrib;
+    kargs.b_contrib = d_bcontrib;
+    kargs.A_vals    = d_A_vals;
+    kargs.A_offsets = d_A_offsets;
+    kargs.A_starts  = d_A_starts;
+    kargs.A_lengths = d_A_lengths;
+    kargs.A_num_diags = A.num_diags;
+    kargs.B_vals    = d_B_vals;
+    kargs.B_offsets = d_B_offsets;
+    kargs.B_starts  = d_B_starts;
+    kargs.B_lengths = d_B_lengths;
+    kargs.C_vals    = d_C_vals;
 
-    /* ---- 5. SM count. ---- */
-    int sm_count = 0;
-    {
-        int dev; CUDA_CHECK(cudaGetDevice(&dev));
-        CUDA_CHECK(cudaDeviceGetAttribute(&sm_count,
-                                          cudaDevAttrMultiProcessorCount, dev));
-    }
-
-    /* ---- 6. End-to-end launch timing. ---- */
+    /* ---- 5. Launch and time. ---- */
     if (profile) cudaProfilerStart();
     TimingResult t_total = measure_gpu([&] {
         launch_hybrid(kargs);
@@ -583,12 +539,9 @@ static bool run_test(const char* name,
     cudaFree(d_A_starts);  cudaFree(d_A_lengths);
     cudaFree(d_B_vals);    cudaFree(d_B_offsets);
     cudaFree(d_B_starts);  cudaFree(d_B_lengths);
-    cudaFree(d_B_lookup);
-    cudaFree(d_corner_tasks); cudaFree(d_heavy_tasks);
-    cudaFree(d_reduce);
+    cudaFree(d_tasks);
     cudaFree(d_cdiags);    cudaFree(d_acontrib);  cudaFree(d_bcontrib);
     cudaFree(d_C_vals);
-    if (d_partial) cudaFree(d_partial);
 
     /* HM baseline cleanup. */
     cudaFree(d_hA_vals); cudaFree(d_hA_off);

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Diagonal SpMSpM — Split-K Partition Kernel</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  background: #0d1117; color: #e6edf3;
+  display: flex; flex-direction: column;
+  padding: 16px; gap: 14px; min-height: 100vh;
+}
+
+/* ── Header ── */
+.header { flex-shrink: 0; }
+.header h1 { font-size: 15px; color: #79c0ff; }
+.header p  { font-size: 10px; color: #8b949e; margin-top: 2px; }
+
+/* ── Main layout: left | center | right ── */
+.main { flex: 1; display: grid; grid-template-columns: 260px 1fr 300px; gap: 14px; min-height: 0; }
+
+/* ── Panel base ── */
+.panel {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden;
+}
+.panel-title { font-size: 10px; font-weight: bold; letter-spacing: .8px; }
+
+/* ── Left: SM view ── */
+.sm-title { color: #f78166; }
+.sm-subtitle { font-size: 9px; color: #8b949e; }
+
+.cta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.cta-box {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
+  padding: 6px 8px; font-size: 9px; color: #8b949e; transition: all .3s;
+}
+.cta-box.active  { background: #1f3d2e; border-color: #3fb950; color: #3fb950; }
+.cta-box .cta-id { font-size: 10px; font-weight: bold; }
+.cta-box .cta-info { font-size: 8px; margin-top: 1px; }
+
+/* smem layout inside CTA */
+.smem-section { display: flex; flex-direction: column; gap: 6px; }
+.smem-row     { display: flex; align-items: center; gap: 6px; }
+.smem-lbl     { font-size: 8px; color: #8b949e; width: 62px; flex-shrink: 0; line-height: 1.4; }
+.smem-lbl strong { color: #e6edf3; font-size: 9px; }
+.smem-bar-wrap { flex: 1; display: flex; gap: 2px; flex-wrap: wrap; }
+
+.cell {
+  border-radius: 2px; border: 1px solid #21262d;
+  transition: background .35s, border-color .35s, opacity .35s;
+  background: #21262d;
+}
+.cell.a    { background: #1a3256; border-color: #388bfd; }
+.cell.b    { background: #3d2b1f; border-color: #f0883e; }
+.cell.lu   { background: #2a1d40; border-color: #d2a8ff; }
+.cell.ac   { background: #1a3a1a; border-color: #3fb950; }
+.cell.load { animation: blink .45s ease-in-out infinite alternate; }
+@keyframes blink { from {opacity:.3} to {opacity:1} }
+
+/* reuse badge */
+.reuse-badge {
+  font-size: 8px; padding: 1px 5px; border-radius: 3px; display: inline-block;
+}
+.reuse-badge.reg { background: #1a3a1a; color: #3fb950; border: 1px solid #3fb950; }
+.reuse-badge.smem { background: #1a3256; color: #79c0ff; border: 1px solid #388bfd; }
+.reuse-badge.once { background: #3d2b1f; color: #f0883e; border: 1px solid #f0883e; }
+
+/* ── Center: partition loop animation ── */
+.center-title { color: #79c0ff; }
+
+.loop-container { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+
+.partition-row {
+  display: grid; grid-template-columns: 70px 1fr 1fr 80px;
+  gap: 6px; align-items: center;
+  padding: 5px 8px; border-radius: 5px;
+  border: 1px solid #21262d; background: #0d1117;
+  font-size: 9px; transition: all .3s;
+}
+.partition-row.current { border-color: #3fb950; background: #0d1f14; }
+.partition-row.done    { opacity: .45; }
+.partition-row.pending { opacity: .7; }
+
+.pr-label { font-weight: bold; color: #8b949e; }
+.pr-a     { color: #388bfd; }
+.pr-b     { color: #f0883e; }
+.pr-acc   { color: #3fb950; text-align: right; }
+
+.pr-bar { height: 6px; border-radius: 3px; background: #21262d; overflow: hidden; }
+.pr-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; width: 0%; }
+.pr-bar-fill.a   { background: #388bfd; }
+.pr-bar-fill.b   { background: #f0883e; }
+.pr-bar-fill.acc { background: #3fb950; }
+
+/* phase label */
+.phase-label {
+  font-size: 10px; text-align: center; padding: 4px;
+  border-radius: 4px; background: #0d1117; border: 1px solid #30363d;
+  color: #8b949e; transition: all .3s; flex-shrink: 0;
+}
+.phase-label.active-a   { border-color: #388bfd; color: #388bfd; background: #0d1a2e; }
+.phase-label.active-b   { border-color: #f0883e; color: #f0883e; background: #200f00; }
+.phase-label.active-acc { border-color: #3fb950; color: #3fb950; background: #001a0a; }
+
+.controls { display: flex; gap: 8px; flex-shrink: 0; }
+button {
+  background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+  padding: 5px 14px; border-radius: 5px; cursor: pointer;
+  font-size: 10px; font-family: inherit; transition: all .2s;
+}
+button:hover { background: #30363d; }
+button.go { background: #1f3d2e; border-color: #3fb950; color: #3fb950; }
+
+.log {
+  background: #0d1117; border: 1px solid #21262d;
+  border-radius: 4px; padding: 6px; height: 72px;
+  overflow-y: auto; font-size: 9px; flex-shrink: 0;
+}
+.log .lg  { color: #8b949e; margin-bottom: 1px; }
+.lg.ok    { color: #3fb950; }
+.lg.la    { color: #388bfd; }
+.lg.lb    { color: #f0883e; }
+
+/* ── Right: reuse + info panel ── */
+.right-title { color: #d2a8ff; }
+
+.info-kv { display: flex; flex-direction: column; gap: 5px; }
+.kv { font-size: 9px; color: #8b949e; }
+.kv span { color: #e6edf3; }
+
+.divider { border-top: 1px solid #21262d; }
+
+.reuse-table { font-size: 9px; border-collapse: collapse; width: 100%; }
+.reuse-table th { color: #8b949e; font-weight: normal; text-align: left; padding: 3px 6px 3px 0; border-bottom: 1px solid #21262d; }
+.reuse-table td { padding: 4px 6px 4px 0; vertical-align: top; line-height: 1.5; }
+.reuse-table tr:not(:last-child) td { border-bottom: 1px solid #161b22; }
+
+.smem-diagram {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 5px;
+  padding: 8px; font-size: 8px;
+}
+.sd-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.sd-block {
+  height: 18px; border-radius: 3px; display: flex; align-items: center;
+  justify-content: center; font-size: 8px; white-space: nowrap;
+}
+.sd-block.a  { background: #1a3256; color: #79c0ff; border: 1px solid #388bfd; }
+.sd-block.b  { background: #3d2b1f; color: #f0883e; border: 1px solid #f0883e; }
+.sd-block.lu { background: #2a1d40; color: #d2a8ff; border: 1px solid #d2a8ff; width: 36px; }
+.sd-label { font-size: 8px; color: #8b949e; white-space: nowrap; }
+
+.budget-bar { margin-top: 4px; }
+.bb-row { display: flex; height: 14px; border-radius: 3px; overflow: hidden; margin-bottom: 3px; }
+.bb-seg { display: flex; align-items: center; justify-content: center; font-size: 7px; }
+.bb-seg.a  { background: #1a3256; color: #79c0ff; flex: 53; }
+.bb-seg.b  { background: #3d2b1f; color: #f0883e; flex: 60; }
+.bb-seg.lu { background: #2a1d40; color: #d2a8ff; flex: 8; }
+.bb-seg.fr { background: #161b22; color: #30363d; flex: 10; }
+.bb-note   { font-size: 8px; color: #8b949e; }
+
+/* Global progress */
+.gp { display: flex; flex-direction: column; gap: 3px; }
+.gp-row { display: flex; align-items: center; gap: 6px; font-size: 9px; }
+.gp-label { width: 50px; color: #8b949e; }
+.gp-bar-bg { flex: 1; height: 7px; background: #21262d; border-radius: 3px; overflow: hidden; }
+.gp-fill { height: 100%; border-radius: 3px; transition: width .5s; }
+.gp-fill.a   { background: #388bfd; }
+.gp-fill.b   { background: #f0883e; }
+.gp-fill.acc { background: #3fb950; }
+.gp-pct { width: 28px; text-align: right; color: #e6edf3; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Diagonal SpMSpM — Split-K Partition Kernel &nbsp;&nbsp;<span style="font-size:11px;color:#8b949e">C = A × B (DIA format)</span></h1>
+  <p>Option A: one CTA loops all A-partitions serially &middot; acc[] persists in registers across partitions &middot; smem O(1) in N</p>
+</div>
+
+<div class="main">
+
+  <!-- LEFT: SM -->
+  <div class="panel">
+    <div class="panel-title sm-title">SM &mdash; 4 CTAs resident</div>
+    <div class="cta-grid" id="cta-grid"></div>
+
+    <div class="divider"></div>
+
+    <!-- SMEM of active CTA -->
+    <div style="font-size:9px;color:#d2a8ff;font-weight:bold;">smem — CTA 0 (current partition)</div>
+    <div class="smem-section" id="smem-section">
+      <div class="smem-row">
+        <div class="smem-lbl"><strong>smem_A</strong><br>53 × chunk<br>≈ 29 KB</div>
+        <div class="smem-bar-wrap" id="sa-cells"></div>
+      </div>
+      <div class="smem-row">
+        <div class="smem-lbl"><strong>smem_B</strong><br>≤60 × chunk<br>≈ 29 KB</div>
+        <div class="smem-bar-wrap" id="sb-cells"></div>
+      </div>
+      <div class="smem-row">
+        <div class="smem-lbl"><strong>lookup</strong><br>≤60 ints<br>&lt; 0.5 KB</div>
+        <div class="smem-bar-wrap" id="sl-cells"></div>
+      </div>
+      <div class="smem-row">
+        <div class="smem-lbl"><strong>acc[K]</strong><br>registers<br>0 smem</div>
+        <div class="smem-bar-wrap" id="sa2-cells"></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div style="font-size:8px;color:#8b949e;line-height:1.6;">
+      <span class="reuse-badge reg">acc[] reused</span> — registers persist across all partitions; no writeback<br>
+      <span class="reuse-badge smem">smem reused</span> — same smem_A/smem_B reloaded each partition<br>
+      <span class="reuse-badge once">b_lookup init</span> — rebuilt each partition from PartBMeta
+    </div>
+  </div>
+
+  <!-- CENTER: partition loop -->
+  <div class="panel">
+    <div class="panel-title center-title">Partition Loop &mdash; CTA 0</div>
+
+    <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;">
+      <div class="phase-label" id="ph-b">1. Load B</div>
+      <div class="phase-label" id="ph-a">2. Load A</div>
+      <div class="phase-label" id="ph-acc">3. Accumulate</div>
+      <div style="flex:1"></div>
+      <div class="controls">
+        <button class="go" id="btn-play">&#9654; Play</button>
+        <button id="btn-step">Step</button>
+        <button id="btn-reset">Reset</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:70px 1fr 1fr 80px;gap:6px;padding:0 8px;font-size:8px;color:#8b949e;flex-shrink:0;">
+      <div>Partition</div><div>A diags loaded</div><div>B diags loaded</div><div style="text-align:right;">acc[]</div>
+    </div>
+
+    <div class="loop-container" id="loop-container"></div>
+
+    <div class="gp" id="gp" style="flex-shrink:0;">
+      <div class="gp-row"><div class="gp-label">A smem</div><div class="gp-bar-bg"><div class="gp-fill a" id="gp-a" style="width:0%"></div></div><div class="gp-pct" id="gp-a-t">0%</div></div>
+      <div class="gp-row"><div class="gp-label">B smem</div><div class="gp-bar-bg"><div class="gp-fill b" id="gp-b" style="width:0%"></div></div><div class="gp-pct" id="gp-b-t">0%</div></div>
+      <div class="gp-row"><div class="gp-label">acc</div><div class="gp-bar-bg"><div class="gp-fill acc" id="gp-acc" style="width:0%"></div></div><div class="gp-pct" id="gp-acc-t">0%</div></div>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- RIGHT: reuse + smem budget -->
+  <div class="panel">
+    <div class="panel-title right-title">Data Reuse &amp; Smem Budget</div>
+
+    <div class="info-kv">
+      <div class="kv">HYBRID_PARTITION_SIZE: <span>53</span></div>
+      <div class="kv">HYBRID_DIAGS_PER_CTA (K): <span>8</span></div>
+      <div class="kv">HYBRID_TILE (positions): <span>128</span></div>
+      <div class="kv">chunk_max = (128+7+3)&amp;~3: <span>136</span></div>
+      <div class="kv">A smem: 53&times;136&times;4: <span style="color:#388bfd;">28,832 B</span></div>
+      <div class="kv">B smem: 60&times;136&times;4: <span style="color:#f0883e;">32,640 B</span></div>
+      <div class="kv">Lookup: 60&times;4: <span style="color:#d2a8ff;">240 B</span></div>
+      <div class="kv">Total: <span style="color:#3fb950;">≈ 57 KB &le; budget</span></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:9px;color:#d2a8ff;font-weight:bold;">Smem layout per partition</div>
+    <div class="smem-diagram">
+      <div class="sd-row">
+        <div class="sd-block a" style="width:90px;">smem_A (53 diags)</div>
+        <div class="sd-block b" style="width:98px;">smem_B (≤60 diags)</div>
+        <div class="sd-block lu">lookup</div>
+      </div>
+      <div class="budget-bar">
+        <div class="bb-row">
+          <div class="bb-seg a">A&nbsp;50%</div>
+          <div class="bb-seg b">B&nbsp;57%</div>
+          <div class="bb-seg lu">lu</div>
+        </div>
+        <div class="bb-note">57 KB smem budget — same layout every partition, O(1) in N</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:9px;color:#d2a8ff;font-weight:bold;">Reuse pattern</div>
+    <table class="reuse-table">
+      <tr><th>Data</th><th>Where</th><th>Reused how</th></tr>
+      <tr>
+        <td><span style="color:#3fb950;">acc[K]</span></td>
+        <td>registers</td>
+        <td>Persists across <em>all</em> N_parts iterations. Never written to smem or global until the final write-out. Full register reuse.</td>
+      </tr>
+      <tr>
+        <td><span style="color:#388bfd;">smem_A</span></td>
+        <td>shared mem</td>
+        <td>Overwritten each partition. 53 A-diagonal chunks reloaded from global A_vals. The same smem region is reused — no extra allocation.</td>
+      </tr>
+      <tr>
+        <td><span style="color:#f0883e;">smem_B</span></td>
+        <td>shared mem</td>
+        <td>Overwritten each partition. ≤60 B-diagonal chunks from global B_vals. Determined by PartBMeta[p]: d_b = d_c − d_a maps A partition → B range.</td>
+      </tr>
+      <tr>
+        <td><span style="color:#d2a8ff;">lookup</span></td>
+        <td>shared mem</td>
+        <td>Rebuilt from PartBMeta each partition (O(b_count) inits). Maps relative d_b → smem slot index for O(1) B access in inner loop.</td>
+      </tr>
+    </table>
+
+    <div class="divider"></div>
+
+    <div style="font-size:9px;color:#8b949e;line-height:1.7;">
+      <strong style="color:#e6edf3;">Why O(1) smem in N:</strong><br>
+      Total A diags per group grows O(N). But each CTA holds only 53 at a time.
+      acc[] carries the running sum in registers — no global partial buffer.
+      Smem footprint is the same whether N = 1K or N = 16K.
+    </div>
+
+    <div style="font-size:9px;color:#8b949e;line-height:1.7;">
+      <strong style="color:#e6edf3;">d_b contiguity (balanced):</strong><br>
+      A sorted by d_a ascending → partition of 53 A diags spans
+      [d_a_min, d_a_max]. Then d_b = d_c &minus; d_a spans
+      [d_c_min&minus;d_a_max, d_c_max&minus;d_a_min],
+      range = (K&minus;1) + 53 = 60 entries. B partition is always contiguous.
+    </div>
+  </div>
+
+</div><!-- .main -->
+
+<script>
+// ─── Config ─────────────────────────────────────────────────────────────
+const N_CTA   = 4;
+const TOTAL_A = 15;     // simplified (real: hundreds)
+const P_SIZE  = 5;      // simplified partition size (real: 53)
+const K       = 3;      // C diags per group
+const N_PARTS = Math.ceil(TOTAL_A / P_SIZE);
+
+// ─── Build CTA boxes ────────────────────────────────────────────────────
+const ctaGrid = document.getElementById('cta-grid');
+const ctaInfos = ['g=0 t=0', 'g=0 t=1', 'g=1 t=0', 'g=1 t=1'];
+for (let i = 0; i < N_CTA; i++) {
+  const d = document.createElement('div');
+  d.className = 'cta-box'; d.id = 'cta-' + i;
+  d.innerHTML = `<div class="cta-id">CTA ${i}</div><div class="cta-info">${ctaInfos[i]}</div>`;
+  ctaGrid.appendChild(d);
+}
+
+// ─── Build smem cells ───────────────────────────────────────────────────
+function cells(id, n, cls, size) {
+  const w = size || 11, h = size || 11;
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement('div');
+    c.className = 'cell'; c.id = id + i;
+    c.style.width = w + 'px'; c.style.height = h + 'px';
+    el.appendChild(c);
+  }
+}
+cells('sa-cells',  53, 'a',  12);
+cells('sb-cells',  60, 'b',  12);
+cells('sl-cells',  60, 'lu',  9);
+cells('sa2-cells',  8, 'ac',  9);
+
+// ─── Build partition rows ────────────────────────────────────────────────
+const loop = document.getElementById('loop-container');
+for (let p = 0; p < N_PARTS; p++) {
+  const a0 = p * P_SIZE, a1 = Math.min(a0 + P_SIZE, TOTAL_A) - 1;
+  const bLo = a0, bHi = a1 + K - 1;
+  const row = document.createElement('div');
+  row.className = 'partition-row pending'; row.id = 'pr-' + p;
+  row.innerHTML = `
+    <div class="pr-label">p=${p} <span style="font-size:8px;color:#8b949e">A[${a0}..${a1}]</span></div>
+    <div>
+      <div class="pr-a" style="font-size:8px;">d_a[${a0}..${a1}]</div>
+      <div class="pr-bar"><div class="pr-bar-fill a" id="pra-${p}" style="width:0%"></div></div>
+    </div>
+    <div>
+      <div class="pr-b" style="font-size:8px;">d_b[${bLo}..${bHi}] (+K−1)</div>
+      <div class="pr-bar"><div class="pr-bar-fill b" id="prb-${p}" style="width:0%"></div></div>
+    </div>
+    <div class="pr-acc" id="pracc-${p}" style="font-size:8px;">acc+=0</div>`;
+  loop.appendChild(row);
+}
+
+// ─── State machine ───────────────────────────────────────────────────────
+let part = 0, state = 'idle', playing = false, timer = null, accTotal = 0;
+
+function setCell(id, cls) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'cell ' + cls;
+}
+function loadCells(prefix, n, cls) {
+  for (let i=0;i<n;i++) setCell(prefix+i,'load '+cls);
+}
+function doneCells(prefix, n, cls) {
+  for (let i=0;i<n;i++) setCell(prefix+i,cls);
+}
+function clearCells(prefix, n) {
+  for (let i=0;i<n;i++) setCell(prefix+i,'');
+}
+function phase(which) {
+  ['ph-b','ph-a','ph-acc'].forEach(id => {
+    const el = document.getElementById(id);
+    el.className = 'phase-label' + (id === which ? (' active-' + which.replace('ph-','')) : '');
+  });
+}
+
+function pct(p) { return Math.round(100 * (p+1) / N_PARTS) + '%'; }
+
+function appendLog(msg, cls='') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'lg ' + cls;
+  line.textContent = `[p=${part}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setGP(id, val) {
+  const p = Math.round(val * 100) + '%';
+  document.getElementById('gp-' + id).style.width = p;
+  document.getElementById('gp-' + id + '-t').textContent = p;
+}
+
+function step() {
+  if (state === 'done') return;
+  const aCount = Math.min(P_SIZE, TOTAL_A - part * P_SIZE);
+  const bCount = aCount + K - 1;
+
+  if (state === 'idle') {
+    document.getElementById('cta-0').className = 'cta-box active';
+    document.getElementById('pr-' + part).className = 'partition-row current';
+    state = 'load-b';
+    phase('ph-b');
+    loadCells('sb-cells', bCount, 'b');
+    loadCells('sl-cells', bCount, 'lu');
+    appendLog('Init lookup + load smem_B  (' + bCount + ' diags)', 'lb');
+    return;
+  }
+  if (state === 'load-b') {
+    doneCells('sb-cells', bCount, 'b');
+    doneCells('sl-cells', bCount, 'lu');
+    clearCells('sa-cells', 53);
+    state = 'load-a';
+    phase('ph-a');
+    loadCells('sa-cells', aCount, 'a');
+    document.getElementById('prb-' + part).style.width = '100%';
+    setGP('b', (part + 1) / N_PARTS);
+    appendLog('Load smem_A  (' + aCount + ' diags)', 'la');
+    return;
+  }
+  if (state === 'load-a') {
+    doneCells('sa-cells', aCount, 'a');
+    state = 'acc';
+    phase('ph-acc');
+    // flash acc
+    for (let i=0;i<8;i++) setCell('sa2-cells'+i,'ac load');
+    document.getElementById('pra-' + part).style.width = '100%';
+    setGP('a', (part + 1) / N_PARTS);
+    appendLog('smem_A × smem_B → acc[]  (registers, persists)', 'ok');
+    return;
+  }
+  if (state === 'acc') {
+    for (let i=0;i<8;i++) setCell('sa2-cells'+i,'ac');
+    accTotal += aCount;
+    document.getElementById('pracc-' + part).textContent = 'acc+=' + accTotal;
+    document.getElementById('pra-' + part).style.width = '100%';
+    document.getElementById('prb-' + part).style.width = '100%';
+    setGP('acc', (part + 1) / N_PARTS);
+    document.getElementById('pr-' + part).className = 'partition-row done';
+    appendLog('Partition done. acc[] stays in registers →', 'ok');
+    part++;
+    state = part < N_PARTS ? 'idle' : 'write';
+    if (state === 'idle') phase('ph-b');
+    return;
+  }
+  if (state === 'write') {
+    phase('');
+    state = 'done';
+    setGP('a', 1); setGP('b', 1); setGP('acc', 1);
+    document.getElementById('cta-0').className = 'cta-box';
+    appendLog('Write acc[] → C_vals  (single global write-out)', 'ok');
+  }
+}
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (state === 'done') reset();
+  playing = !playing;
+  document.getElementById('btn-play').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) {
+    timer = setInterval(() => { step(); if (state==='done') { clearInterval(timer); playing=false; document.getElementById('btn-play').textContent='▶ Play'; }}, 650);
+  } else clearInterval(timer);
+});
+document.getElementById('btn-step').addEventListener('click', step);
+document.getElementById('btn-reset').addEventListener('click', reset);
+
+function reset() {
+  clearInterval(timer); playing = false; part = 0; state = 'idle'; accTotal = 0;
+  document.getElementById('btn-play').textContent = '▶ Play';
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('cta-0').className = 'cta-box';
+  clearCells('sa-cells', 53); clearCells('sb-cells', 60);
+  clearCells('sl-cells', 60); clearCells('sa2-cells', 8);
+  ['a','b','acc'].forEach(k => { setGP(k, 0); });
+  ['ph-b','ph-a','ph-acc'].forEach(id => document.getElementById(id).className = 'phase-label');
+  for (let p=0;p<N_PARTS;p++) {
+    document.getElementById('pr-'+p).className = 'partition-row pending';
+    document.getElementById('pra-'+p).style.width='0%';
+    document.getElementById('prb-'+p).style.width='0%';
+    document.getElementById('pracc-'+p).textContent='acc+=0';
+  }
+}
+</script>
+</body>
+</html>

@@ -38,30 +38,62 @@ partition P:  d_a = 0         longest, center
 
 ## Task Structure (Chosen Design)
 
-One CTA owns one `(C diagonal group, position tile, A-partition)` triple.
-
-Each CTA loops through A-partitions serially, keeping smem small:
+One CTA owns one `(C diagonal group, position tile)` pair and loops through
+all A-partitions serially. The accumulator `acc[ki]` lives in registers
+across all partition iterations — no global partial buffer needed.
 
 ```
 CTA (g, t):
   for p = 0 .. P-1:
-    load A-partition[p] + B-partition[p] into smem   ← fits: O(partition_size)
-    accumulate into slot[p % 2]
-    if p > 0: add slot[(p-1) % 2] → running_sum
-  add slot[(P-1) % 2] → running_sum
-  write running_sum → C_vals
+    load A-partition[p] (N_part diags) into smem_A
+    load B-partition[p] (N_part diags) into smem_B   ← d_b = d_c - d_a, contiguous
+    accumulate smem_A × smem_B → acc[ki]              ← registers, reused across p
+  write acc[ki] → C_vals
 ```
 
 **Smem per CTA (constant, independent of N):**
 ```
-slot[0] + slot[1]  =  2 × partition_size × chunk × 4
-B smem             =  partition_size × chunk_b × 4
-B lookup           =  b_d_range_pad × 4
+A smem:    N_part × chunk_max × 4  bytes
+B smem:    N_part × chunk_max × 4  bytes   (balanced: same count as A)
+B lookup:  N_part × 4              bytes   (offset → smem index)
+constant:  K × 4                   bytes   (8 × 4 = 32 bytes)
+─────────────────────────────────────────
+Total:     N_part × 1092 + 32      bytes
 ```
+
+**Partition size derivation (H100):**
+```
+Budget:    228 KB/SM ÷ 4 blocks/SM = 57 KB = 58,368 bytes
+
+chunk_max: (TILE + spread_max + 3) & ~3 = (128 + 7 + 3) & ~3 = 136
+           spread_max = K − 1 = 7 is per-A-diagonal, not per-partition.
+           For a single A diagonal d_a contributing to K C diagonals,
+           the required B positions shift by at most K−1 across those
+           C diagonals. N_part does NOT grow spread_max.
+
+smem breakdown:
+  A:       N_part × chunk_max × 4  =  N_part × 136 × 4  =  N_part × 544
+  B:       N_part × chunk_max × 4  =  N_part × 136 × 4  =  N_part × 544
+  lookup:  N_part × 4              =  N_part × 4
+  ──────────────────────────────────────────────────────────────────────
+  per N:   N_part × (544 + 544 + 4)  =  N_part × 1092
+  constant: K × 4 = 8 × 4            =  32
+
+N_part × 1092 + 32 ≤ 58368
+N_part ≤ (58368 − 32) / 1092 ≈ 53.4
+N_part = 53   →   HYBRID_PARTITION_SIZE = 53
+```
+
+**Why balanced (N_part A = N_part B):**
+Because d_b = d_c − d_a, picking N_part contiguous A diagonals (sorted by
+offset, corner-first) maps to exactly N_part contiguous B offsets. Both
+arrays are the same size in smem, so the budget splits equally between A
+and B — no wasted capacity.
 
 **Chosen because:** Zero inter-CTA synchronization. Self-contained.
 No kernel launch overhead. GPU parallelizes across different (g, t) CTAs
-naturally. Smem stays bounded regardless of N.
+naturally. Smem stays bounded regardless of N. `acc[ki]` in registers means
+no write-back between partition steps.
 
 **Limitation recorded:** Compute and reduce are serial within each CTA.
 No true hardware-level overlap between them. The corner-first ordering
@@ -139,5 +171,8 @@ and the single-launch overhead savings matter more than occupancy.
 | Date | Decision | Reason |
 |------|----------|--------|
 | 2026-04-08 | Option A chosen | Zero sync complexity, self-contained, no launch overhead, scales to any N |
+| 2026-04-08 | `HYBRID_PARTITION_SIZE = 53` | Derived from H100 57 KB smem budget, balanced A+B partition, chunk_max=136 |
+| 2026-04-08 | Balanced A+B partition | d_b = d_c − d_a makes A and B partition sizes equal; splits smem budget evenly |
+| 2026-04-08 | acc[] in registers | Eliminates global partial buffer; CTA accumulates across all partition iterations |
 | 2026-04-08 | Option B recorded | Try if reduction latency becomes a measured bottleneck |
 | 2026-04-08 | Option C recorded | Only viable for small N (≤ 8K) due to cooperative grid size limit |
