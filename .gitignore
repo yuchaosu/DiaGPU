@@ -3,3 +3,4 @@ test_diag
 test_diag_debug
 *.pdf
 EXAMPLE.md
+.worktrees/
