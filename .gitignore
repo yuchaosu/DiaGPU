@@ -4,3 +4,4 @@ test_diag_debug
 *.pdf
 EXAMPLE.md
 .worktrees/
+docs/
