@@ -301,8 +301,9 @@ static bool run_test(const char* name,
 
     /* ---- 2. Build hybrid plan. ---- */
     HybridPlan plan = build_hybrid_plan(A, B, M, K, N);
-    fprintf(g_out, "**Plan:** tasks=%zu  a\\_contrib=%zu  max\\_smem=%d bytes\n\n",
-            plan.tasks.size(), plan.a_contrib.size(), plan.max_smem);
+    fprintf(g_out, "**Plan:** tasks=%zu  a\\_contrib=%zu  b\\_contrib=%zu  part\\_b\\_meta=%zu  max\\_smem=%d bytes\n\n",
+            plan.tasks.size(), plan.a_contrib.size(), plan.b_contrib.size(),
+            plan.part_b_meta.size(), plan.max_smem);
 
     /* ---- 3. Upload data. ---- */
     float* d_A_vals    = upload(A.values);
@@ -319,6 +320,7 @@ static bool run_test(const char* name,
     int* d_acontrib        = upload(plan.a_contrib);
     int* d_bcontrib        = upload(plan.b_contrib.empty()
                                    ? std::vector<int>{0} : plan.b_contrib);
+    PartBMeta* d_part_b_meta = upload(plan.part_b_meta);
 
     float* d_C_vals = nullptr;
     CUDA_CHECK(cudaMalloc(&d_C_vals,
@@ -333,6 +335,7 @@ static bool run_test(const char* name,
     kargs.n_c_diags = static_cast<int>(plan.c_diags.size());
     kargs.a_contrib = d_acontrib;
     kargs.b_contrib = d_bcontrib;
+    kargs.part_b_meta = d_part_b_meta;
     kargs.A_vals    = d_A_vals;
     kargs.A_offsets = d_A_offsets;
     kargs.A_starts  = d_A_starts;
@@ -541,6 +544,7 @@ static bool run_test(const char* name,
     cudaFree(d_B_starts);  cudaFree(d_B_lengths);
     cudaFree(d_tasks);
     cudaFree(d_cdiags);    cudaFree(d_acontrib);  cudaFree(d_bcontrib);
+    cudaFree(d_part_b_meta);
     cudaFree(d_C_vals);
 
     /* HM baseline cleanup. */
