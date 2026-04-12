@@ -86,6 +86,12 @@ hybrid_kernel(HybridKernelArgs args)
                 c_len[ki]    = cd.length;
                 c_start[ki]  = cd.values_start;
                 c_sc[ki]     = (cd.c_offset >= 0) ? cd.c_offset : 0;
+            } else {
+                c_offset[ki] = 0;
+                c_sr[ki]     = task.min_c_sr;
+                c_len[ki]    = 0;
+                c_start[ki]  = 0;
+                c_sc[ki]     = task.min_c_sc;
             }
         }
 

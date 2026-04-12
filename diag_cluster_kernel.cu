@@ -258,7 +258,11 @@ cluster_kernel(ClusterKernelArgs args)
             c_len   [ki] = cd.length;
             c_start [ki] = cd.values_start;
         } else {
-            c_offset[ki] = c_sr[ki] = c_sc[ki] = c_len[ki] = c_start[ki] = 0;
+            c_offset[ki] = 0;
+            c_sr    [ki] = cmeta.min_c_sr_all;
+            c_sc    [ki] = task.min_c_sc;
+            c_len   [ki] = 0;
+            c_start [ki] = 0;
         }
     }
 
