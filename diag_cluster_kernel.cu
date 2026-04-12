@@ -435,5 +435,9 @@ void launch_cluster(ClusterKernelArgs args, cudaStream_t stream)
     cfg.attrs    = &attr;
     cfg.numAttrs = 1;
 
+    cudaFuncSetAttribute(cluster_kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        static_cast<int>(cfg.dynamicSmemBytes));
+
     cudaLaunchKernelEx(&cfg, cluster_kernel, args);
 }
