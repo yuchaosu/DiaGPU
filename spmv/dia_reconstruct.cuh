@@ -34,14 +34,15 @@
 #include <vector>
 
 /* ============================================================
- * Tile + WMMA geometry (TF32, m16n8k8).
+ * Tile + WMMA geometry (TF32, m16n16k8 — the only TF32 shape
+ * the nvcuda::wmma API supports).
  *   One CTA = one warp = one output tile of MMA_M (= 16) rows.
  *   The K dimension is batched MMA_K (= 8) diagonals at a time.
- *   Two MMAs (top/bot) cover the 16 output rows via diagonal
- *   extraction on a 16 x 8 accumulator each.
+ *   A single MMA per batch produces a 16 x 16 accumulator whose
+ *   diagonal entries C[r, r] are the 16 output rows y[tile+r].
  * ============================================================ */
 constexpr int MMA_M = 16;
-constexpr int MMA_N =  8;
+constexpr int MMA_N = 16;
 constexpr int MMA_K =  8;
 constexpr int TILE_M = MMA_M;
 
@@ -120,6 +121,31 @@ struct ReconView {
  * Kernel launcher  (implementation in tc_spmv_dense_kernel.cu).
  * ============================================================ */
 void launch_tc_spmv_dense(
+    ReconView    R,
+    const float* d_x,
+    int          x_size,
+    float*       d_y,
+    cudaStream_t stream = 0);
+
+/* ============================================================
+ * Register-direct variant (implementation in
+ * tc_spmv_regdirect_kernel.cu).  Same diagonal mapping and
+ * math as launch_tc_spmv_dense, but rewritten with the two
+ * Drawloom-style mechanics that a band actually benefits from:
+ *
+ *   1. raw mma.sync.m16n8k8.f32.tf32 PTX (the native TF32 shape)
+ *      with operands streamed global -> registers — NO shared-
+ *      memory staging, no __syncwarp.
+ *   2. the 16 diagonal results are read straight out of the
+ *      accumulator registers (known lane/register map) — NO
+ *      store_matrix_sync, no smem round-trip.
+ *
+ * Deliberately omitted (irrelevant to a uniform band): row
+ * reordering / LSH densification, the deep cp.async pipeline
+ * (only ceil(num_diags/8) batches to overlap), and 2:4 sparse
+ * tensor cores.
+ * ============================================================ */
+void launch_tc_spmv_regdirect(
     ReconView    R,
     const float* d_x,
     int          x_size,
