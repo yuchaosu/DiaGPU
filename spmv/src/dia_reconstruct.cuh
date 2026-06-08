@@ -24,7 +24,7 @@
  *                                                     terms drop)
  *
  * which the kernel evaluates as a tensor-core MMA whose
- * diagonal entries are the y values (see tc_spmv_dense_kernel.cu).
+ * diagonal entries are the y values (see tc_spmv_regdirect_kernel.cu).
  * ============================================================ */
 #pragma once
 
@@ -118,19 +118,10 @@ struct ReconView {
 };
 
 /* ============================================================
- * Kernel launcher  (implementation in tc_spmv_dense_kernel.cu).
- * ============================================================ */
-void launch_tc_spmv_dense(
-    ReconView    R,
-    const float* d_x,
-    int          x_size,
-    float*       d_y,
-    cudaStream_t stream = 0);
-
-/* ============================================================
- * Register-direct variant (implementation in
- * tc_spmv_regdirect_kernel.cu).  Same diagonal mapping and
- * math as launch_tc_spmv_dense, but rewritten with the two
+ * Kernel launcher  (implementation in tc_spmv_regdirect_kernel.cu).
+ *
+ * Register-direct TF32 tensor-core diagonal SpMV.  Maps the band
+ * SpMV onto an MMA whose product diagonal is y, using the two
  * Drawloom-style mechanics that a band actually benefits from:
  *
  *   1. raw mma.sync.m16n8k8.f32.tf32 PTX (the native TF32 shape)

@@ -2,7 +2,7 @@
  * bench_cusparse.cu
  *
  * Throughput comparison: the TF32 tensor-core diagonal SpMV
- * kernel (launch_tc_spmv_dense) vs. cuSPARSE generic SpMV on
+ * kernel (launch_tc_spmv_regdirect) vs. cuSPARSE generic SpMV on
  * the SAME banded matrix.
  *
  * cuSPARSE's generic API has no DIA format, so the band is fed
@@ -14,12 +14,22 @@
  * The matrix is generated directly from its diagonal offsets
  * (no dense N x N buffer) so N can be large.
  *
- * Build:
+ * Optionally also benchmarks Intel MKL CSR SpMV on the CPU as a
+ * hardware-axis reference (enabled with -DUSE_MKL; see below).
+ *
+ * Build (GPU only):
  *   nvcc -std=c++17 -arch=sm_90 bench_cusparse.cu \
- *        tc_spmv_dense_kernel.cu -o bench_cusparse -lcusparse
+ *        ../src/tc_spmv_regdirect_kernel.cu -o bench_cusparse -lcusparse
+ *
+ * Build (with MKL CPU baseline), MKLROOT = /opt/intel/oneapi/mkl/latest:
+ *   nvcc -std=c++17 -arch=sm_90 -DUSE_MKL -I$MKLROOT/include \
+ *        bench_cusparse.cu ../src/tc_spmv_regdirect_kernel.cu \
+ *        -L$MKLROOT/lib/intel64 -lmkl_rt -lcusparse -o bench_cusparse
+ *   # run-time: libmkl_rt.so + libiomp5.so must be on LD_LIBRARY_PATH
+ *   #   ($MKLROOT/lib/intel64 and the oneAPI compiler/latest/lib).
  * ============================================================ */
 
-#include "dia_reconstruct.cuh"
+#include "../src/dia_reconstruct.cuh"
 
 #include <cusparse.h>
 
@@ -29,6 +39,11 @@
 #include <cstdlib>
 #include <functional>
 #include <vector>
+
+#ifdef USE_MKL
+#include <mkl.h>
+#include <chrono>
+#endif
 
 #define CUDA_CHECK(call)                                                   \
     do {                                                                   \
@@ -216,19 +231,65 @@ int main(int argc, char** argv)
                      CUSPARSE_SPMV_CSR_ALG2, d_buf);
     });
 
-    /* ---------------- TC kernel (dense / WMMA + smem) ---------------- */
-    CUDA_CHECK(cudaMemset(d_y, 0, N * sizeof(float)));
-    launch_tc_spmv_dense(RV, d_x, N, d_y, 0);
-    CUDA_CHECK(cudaDeviceSynchronize());
-    bool ok_tc = verify("TC dense", 1e-2f);
-    float ms_tc = time_ms([&]{ launch_tc_spmv_dense(RV, d_x, N, d_y, 0); });
-
     /* ---------------- TC kernel (register-direct PTX) ---------------- */
     CUDA_CHECK(cudaMemset(d_y, 0, N * sizeof(float)));
     launch_tc_spmv_regdirect(RV, d_x, N, d_y, 0);
     CUDA_CHECK(cudaDeviceSynchronize());
     bool ok_rd = verify("TC regdirect", 1e-2f);
     float ms_rd = time_ms([&]{ launch_tc_spmv_regdirect(RV, d_x, N, d_y, 0); });
+
+    /* ---------------- MKL CSR SpMV (CPU baseline) ----------------
+     * Hardware-axis context only: a CPU library vs a GPU kernel, a gap
+     * dominated by the H100's HBM bandwidth vs CPU DDR — NOT an apples-
+     * to-apples algorithmic comparison the way cuSPARSE / Drawloom are.
+     * Same CSR fp32 the GPU baselines consume (MKL's DIA format was
+     * removed in oneMKL 2026). Timed on the host with std::chrono, since
+     * the GPU event timer above cannot measure CPU-only work. */
+    bool ok_mkl = true;   /* stays true when built without -DUSE_MKL */
+#ifdef USE_MKL
+    const int mkl_threads = mkl_get_max_threads();
+    mkl_set_num_threads(mkl_threads);          /* pin for reproducibility */
+
+    sparse_matrix_t A_mkl;
+    matrix_descr    descr;
+    descr.type = SPARSE_MATRIX_TYPE_GENERAL;
+    if (mkl_sparse_s_create_csr(&A_mkl, SPARSE_INDEX_BASE_ZERO, N, N,
+            h_rowptr.data(), h_rowptr.data() + 1,
+            h_colidx.data(), h_csrval.data()) != SPARSE_STATUS_SUCCESS) {
+        std::fprintf(stderr, "mkl_sparse_s_create_csr failed\n");
+        std::exit(1);
+    }
+    mkl_sparse_set_mv_hint(A_mkl, SPARSE_OPERATION_NON_TRANSPOSE, descr,
+                           WARMUP + ITERS);
+    mkl_sparse_optimize(A_mkl);
+
+    std::vector<float> y_mkl(N, 0.0f);
+    auto mkl_spmv = [&]{
+        mkl_sparse_s_mv(SPARSE_OPERATION_NON_TRANSPOSE, 1.0f, A_mkl, descr,
+                        x.data(), 0.0f, y_mkl.data());
+    };
+
+    auto time_ms_cpu = [&](std::function<void()> fn) {
+        for (int i = 0; i < WARMUP; ++i) fn();
+        auto c0 = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < ITERS; ++i) fn();
+        auto c1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(c1 - c0).count() / ITERS;
+    };
+
+    mkl_spmv();                                /* correctness vs y_ref */
+    {
+        float err = 0.0f;
+        for (int i = 0; i < N; ++i)
+            err = std::max(err, std::fabs(y_mkl[i] - y_ref[i]));
+        const float rel = err / ymax;
+        ok_mkl = rel < 1e-4f;
+        std::printf("    %-10s rel error = %.2e  %s\n", "MKL", rel,
+                    ok_mkl ? "[OK]" : "[FAIL]");
+    }
+    const double ms_mkl = time_ms_cpu(mkl_spmv);
+    mkl_sparse_destroy(A_mkl);
+#endif
 
     /* ---------------- report ---------------- */
     const double useful_flop = 2.0 * nnz;                  /* per SpMV */
@@ -242,17 +303,23 @@ int main(int argc, char** argv)
                 100.0 * nnz / ((double)N * N));
     std::printf("  %-14s %9.4f ms   %8.2f GFLOP/s\n",
                 "cuSPARSE",      ms_cs, gflops(ms_cs));
-    std::printf("  %-14s %9.4f ms   %8.2f GFLOP/s\n",
-                "TC dense",      ms_tc, gflops(ms_tc));
+#ifdef USE_MKL
+    std::printf("  %-14s %9.4f ms   %8.2f GFLOP/s   (CPU, %d threads)\n",
+                "MKL CSR",       ms_mkl, gflops(ms_mkl), mkl_threads);
+#endif
     std::printf("  %-14s %9.4f ms   %8.2f GFLOP/s\n",
                 "TC regdirect",  ms_rd, gflops(ms_rd));
-    std::printf("  speedup  regdirect / dense    = %.2fx\n", ms_tc / ms_rd);
     std::printf("  speedup  regdirect / cuSPARSE = %.2fx\n", ms_cs / ms_rd);
+#ifdef USE_MKL
+    std::printf("  speedup  regdirect / MKL(CPU) = %.2fx   "
+                "[hardware-axis: GPU vs CPU, not algorithmic]\n",
+                ms_mkl / ms_rd);
+#endif
     std::printf("  TC MMA utilization = %.1f%%  (useful %.2e / issued %.2e flop)\n",
                 100.0 * useful_flop / issued_flop, useful_flop, issued_flop);
 
     std::printf("\n%s\n",
-                (ok_cs && ok_tc && ok_rd) ? "RESULTS VERIFIED"
+                (ok_cs && ok_rd && ok_mkl) ? "RESULTS VERIFIED"
                                           : "VERIFICATION FAILED");
 
     cusparseDestroySpMat(matA);
@@ -261,5 +328,5 @@ int main(int argc, char** argv)
     cusparseDestroy(handle);
     cudaFree(d_buf); cudaFree(d_rowptr); cudaFree(d_colidx); cudaFree(d_csrval);
     cudaFree(d_off); cudaFree(d_val); cudaFree(d_x); cudaFree(d_y);
-    return (ok_cs && ok_tc && ok_rd) ? 0 : 1;
+    return (ok_cs && ok_rd && ok_mkl) ? 0 : 1;
 }

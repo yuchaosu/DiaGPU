@@ -1,11 +1,11 @@
 /* ============================================================
  * test_tc_spmv.cu
  *
- * GPU correctness harness for tc_spmv_dense_kernel.
+ * GPU correctness harness for tc_spmv_regdirect_kernel.
  *
  *   1. Build a banded dense H + random x.
  *   2. dense_to_dia(H) -> build_recon(DIA) -> Recon  (real code).
- *   3. Upload Recon + x, run launch_tc_spmv_dense -> y_gpu.
+ *   3. Upload Recon + x, run launch_tc_spmv_regdirect -> y_gpu.
  *   4. Compare y_gpu against:
  *        - y_recon : CPU spmv_from_recon (same identity as kernel)
  *        - y_ref   : dense H * x reference
@@ -15,10 +15,10 @@
  *
  * Build:
  *   nvcc -std=c++17 -arch=sm_90 test_tc_spmv.cu \
- *        tc_spmv_dense_kernel.cu -o test_tc_spmv
+ *        ../src/tc_spmv_regdirect_kernel.cu -o test_tc_spmv
  * ============================================================ */
 
-#include "dia_reconstruct.cuh"
+#include "../src/dia_reconstruct.cuh"
 
 #include <cmath>
 #include <cstdio>
@@ -154,7 +154,6 @@ static bool run_case(const char* name, int N,
     };
 
     bool ok = true;
-    ok &= check("dense",     launch_tc_spmv_dense);
     ok &= check("regdirect", launch_tc_spmv_regdirect);
 
     cudaFree(d_off); cudaFree(d_val); cudaFree(d_x); cudaFree(d_y);

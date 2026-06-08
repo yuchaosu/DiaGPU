@@ -3,9 +3,8 @@
  *
  * Register-direct TF32 tensor-core diagonal SpMV.
  *
- * Same math as tc_spmv_dense_kernel.cu (the diagonal of a dense
- * A*B is y), but rewritten with the two mechanics borrowed from
- * Drawloom that a uniform band benefits from:
+ * The diagonal of a dense A*B is y, with the two mechanics
+ * borrowed from Drawloom that a uniform band benefits from:
  *
  *   1. raw `mma.sync.m16n8k8.row.col.f32.tf32.tf32.f32` PTX, with
  *      A (Recon) and B (x) streamed global -> registers.  No
