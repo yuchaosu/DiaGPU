@@ -1,0 +1,11 @@
+# Markdown notes (keep README.md)
+*.md
+!README.md
+
+# Build artifacts
+bench
+bench_mkl
+*.o
+*.exe
+*.ncu-rep
+*.nsys-rep
