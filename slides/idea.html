@@ -3,122 +3,224 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Diagonal-Layout GPU Kernels for Hamiltonian Simulation</title>
+<title>Diagonal-Aware SpMV and SpMSpM Kernels for GPU-Accelerated Hamiltonian Simulation</title>
 <style>
   :root{
-    --bg:#0e1116; --bg2:#161b22; --fg:#e6edf3; --muted:#9aa7b4;
-    --accent:#4ea1ff; --accent2:#7ee787; --warn:#ffa657; --bad:#ff7b72;
-    --grid:#222a35; --card:#1b222c;
-    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    /* NC State brand palette */
+    --brick:#CC0000;        /* Wolfpack Red */
+    --brick-dark:#990000;   /* Reynolds Red (secondary) */
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#5b6470;
+    --grid:#dcdee2; --card:#f4f5f7; --card-line:#e3e5e9;
+    --win:#1e7a3c; --warn:#b87514; --bad:#c0392b;
+    --code-bg:#f0f1f4; --code-fg:#990000;
+    --sans:Arial,"Helvetica Neue",Helvetica,"Segoe UI",sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Consolas,Menlo,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:118%}
   html,body{height:100%}
-  body{background:var(--bg);color:var(--fg);font-family:var(--sans);overflow:hidden}
-  .deck{height:100vh;width:100vw;position:relative}
+  body{background:#0d0d0d;color:var(--fg);font-family:var(--sans);overflow:hidden}
+  .deck{height:100vh;width:100vw;position:relative;background:var(--bg)}
   .slide{
     position:absolute;inset:0;display:none;flex-direction:column;
-    padding:5.5vh 7vw;opacity:0;transition:opacity .25s ease;
+    align-items:center;justify-content:center;text-align:center;
+    padding:13vh 3.5vw 5vh;opacity:0;transition:opacity .22s ease;background:var(--bg);
   }
   .slide.active{display:flex;opacity:1}
-  h1{font-size:3.0rem;line-height:1.12;font-weight:750;letter-spacing:-.02em}
-  h2{font-size:2.1rem;font-weight:700;letter-spacing:-.01em;margin-bottom:2.2vh;
-     color:var(--fg);border-bottom:2px solid var(--grid);padding-bottom:1.2vh}
-  h2 .tag{color:var(--accent);font-family:var(--mono);font-size:1.1rem;margin-right:.6rem}
-  h3{font-size:1.25rem;font-weight:650;color:var(--accent);margin:1.6vh 0 .8vh}
-  p{font-size:1.25rem;line-height:1.55;color:var(--fg)}
-  .sub{color:var(--muted);font-size:1.3rem;margin-top:2.2vh;font-weight:400}
-  ul{list-style:none;margin:1vh 0}
-  li{font-size:1.28rem;line-height:1.65;padding-left:1.5rem;position:relative;margin:.7vh 0}
-  li::before{content:"▸";color:var(--accent);position:absolute;left:0;font-size:1.0rem;top:.35rem}
-  li.good::before{content:"✓";color:var(--accent2)}
-  li.bad::before{content:"✗";color:var(--bad)}
+  .slide.cover{justify-content:center;padding-top:7.5vh}
+  /* centered content column */
+  .content{width:100%;max-width:84rem;display:flex;flex-direction:column;
+    align-items:center;text-align:center}
+  /* title pinned to top-left; body stays vertically centered */
+  .content h2{position:absolute;top:7vh;left:3.5vw;text-align:left;margin:0}
+
+  /* NC State red brick banner with wordmark (narrow) */
+  .brick{
+    position:absolute;top:0;left:0;right:0;height:5vh;background:var(--brick);
+    display:flex;align-items:center;padding:0 1.6vw;z-index:5;
+  }
+  .wordmark{font-family:var(--sans);color:#fff;letter-spacing:.01em;
+    font-size:1.7vh;line-height:1;text-transform:uppercase}
+  .wordmark b{font-weight:800;margin-right:.35em}
+  .wordmark span{font-weight:400;opacity:.96}
+
+  h1{font-size:3.4rem;line-height:1.14;font-weight:800;letter-spacing:-.015em;color:var(--fg)}
+  h2{font-size:2.4rem;font-weight:800;letter-spacing:-.01em;margin-bottom:2.6vh;
+     color:var(--fg);display:inline-block}
+  h2 .tag{color:var(--brick);font-family:var(--mono);font-size:2.0rem;font-weight:800;margin-right:.8rem}
+  h3{font-size:1.5rem;font-weight:700;color:var(--brick-dark);margin:1.6vh 0 .8vh}
+  p{font-size:1.5rem;line-height:1.55;color:var(--fg)}
+  .sub{color:var(--muted);font-size:1.55rem;margin-top:2.2vh;font-weight:400;max-width:64ch}
+  ul{list-style:none;margin:1vh 0;display:inline-block;text-align:left}
+  li{font-size:1.5rem;line-height:1.6;padding-left:1.7rem;position:relative;margin:.9vh 0}
+  li::before{content:"";position:absolute;left:.15rem;top:.62em;width:.55rem;height:.55rem;
+    background:var(--brick);border-radius:2px}
+  li.good::before{content:"✓";color:var(--win);background:none;width:auto;height:auto;
+    top:.05rem;left:0;font-size:1.1rem;font-weight:800}
+  li.bad::before{content:"✗";color:var(--bad);background:none;width:auto;height:auto;
+    top:.05rem;left:0;font-size:1.1rem;font-weight:800}
   .muted{color:var(--muted)}
-  code,.mono{font-family:var(--mono);font-size:.95em;background:var(--bg2);
-    padding:.1em .4em;border-radius:5px;color:var(--accent2)}
-  .center{align-items:center;justify-content:center;text-align:center}
-  .row{display:flex;gap:2.2vw;flex-wrap:wrap}
-  .col{flex:1;min-width:0}
-  .card{background:var(--card);border:1px solid var(--grid);border-radius:12px;
-    padding:2.4vh 1.8vw;flex:1}
+  code,.mono{font-family:var(--mono);font-size:.92em;background:var(--code-bg);
+    padding:.1em .4em;border-radius:5px;color:var(--code-fg)}
+  .row{display:flex;gap:2.4vw;flex-wrap:wrap;width:100%;justify-content:center;align-items:center}
+  .col{flex:1;min-width:0;text-align:left}
+  .card{background:var(--card);border:1px solid var(--card-line);border-radius:10px;
+    padding:2.8vh 2.2vw;flex:1}
   .card h3{margin-top:0}
-  .big{font-size:3.4rem;font-weight:800;letter-spacing:-.02em;line-height:1}
-  .big.a{color:var(--accent)} .big.g{color:var(--accent2)} .big.w{color:var(--warn)}
-  .kicker{color:var(--muted);font-family:var(--mono);font-size:.95rem;
-    text-transform:uppercase;letter-spacing:.12em;margin-top:.6vh}
-  table{border-collapse:collapse;width:100%;font-size:1.12rem;margin-top:1vh}
-  th,td{text-align:left;padding:.85vh 1.1vw;border-bottom:1px solid var(--grid)}
-  th{color:var(--muted);font-weight:600;font-size:.95rem;text-transform:uppercase;letter-spacing:.05em}
+  .card ul.oneline{display:block}
+  .card ul.oneline li{white-space:nowrap;font-size:1.15rem;line-height:1.55}
+  .big{font-size:3.9rem;font-weight:800;letter-spacing:-.02em;line-height:1}
+  .big.a{color:var(--brick)} .big.g{color:var(--win)} .big.w{color:var(--warn)}
+  .kicker{color:var(--muted);font-family:var(--mono);font-size:.92rem;
+    text-transform:uppercase;letter-spacing:.1em;margin-top:.6vh}
+  .tablewrap{width:100%;overflow:auto}
+  table{border-collapse:collapse;width:100%;font-size:1.32rem;margin:1vh auto 0}
+  th,td{text-align:left;padding:1.0vh 1.2vw;border-bottom:1px solid var(--grid)}
+  tr:first-child th{color:#fff;background:var(--brick);font-weight:700;
+    font-size:.92rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:none}
   td.num{font-family:var(--mono);text-align:right}
-  .win{color:var(--accent2);font-weight:700}
+  th.num{text-align:right}
+  tr:nth-child(even) td{background:#fafafb}
+  .win{color:var(--win);font-weight:700}
   .lose{color:var(--bad);font-weight:700}
   .neu{color:var(--warn);font-weight:700}
-  .footer{position:absolute;bottom:2.6vh;left:7vw;right:7vw;display:flex;
+  .footer{position:absolute;bottom:2.2vh;left:7vw;right:7vw;display:flex;
     justify-content:space-between;align-items:center;color:var(--muted);
-    font-size:.85rem;font-family:var(--mono)}
-  .progress{position:absolute;top:0;left:0;height:4px;background:var(--accent);
-    transition:width .25s ease}
-  .pill{display:inline-block;background:var(--bg2);border:1px solid var(--grid);
-    border-radius:999px;padding:.3em .9em;font-size:.95rem;color:var(--muted);
-    font-family:var(--mono);margin:.3vh .3vw}
-  .eq{font-family:var(--mono);background:var(--bg2);border:1px solid var(--grid);
-    border-radius:10px;padding:2vh 2vw;font-size:1.4rem;color:var(--accent2);
+    font-size:.82rem;font-family:var(--mono);z-index:5}
+  .progress{position:absolute;bottom:0;left:0;height:4px;background:var(--brick);
+    transition:width .25s ease;z-index:6}
+  .eq{font-family:var(--mono);background:var(--card);border:1px solid var(--card-line);
+    border-left:4px solid var(--brick);
+    border-radius:8px;padding:2vh 2vw;font-size:1.65rem;color:var(--brick-dark);
     display:inline-block;margin:1.5vh 0}
-  .note{border-left:3px solid var(--warn);background:rgba(255,166,87,.07);
-    padding:1.4vh 1.6vw;border-radius:0 8px 8px 0;font-size:1.12rem;color:var(--fg);margin-top:1.6vh}
-  .note b{color:var(--warn)}
-  .diag-art{font-family:var(--mono);font-size:1.0rem;line-height:1.35;color:var(--muted);white-space:pre}
-  .hl{color:var(--accent)} .hlg{color:var(--accent2)}
-  .title-meta{margin-top:4vh;color:var(--muted);font-size:1.15rem;line-height:1.8}
-  .title-meta b{color:var(--fg)}
+  .note{border-left:4px solid var(--brick);background:#fdf2f2;text-align:left;
+    padding:1.5vh 1.8vw;border-radius:0 8px 8px 0;font-size:1.32rem;color:var(--fg);margin-top:1.6vh}
+  .note b{color:var(--brick-dark)}
+  .diag-art{font-family:var(--mono);font-size:1.2rem;line-height:1.4;color:var(--muted);white-space:pre;text-align:left}
+  .hl{color:var(--brick);font-weight:700} .hlg{color:var(--brick-dark);font-weight:700}
+  .highlight{width:100%;margin-top:2.4vh;background:var(--brick);color:#fff;
+    border-radius:10px;padding:1.8vh 2vw;font-size:1.55rem;font-weight:600;text-align:center}
+  .highlight b{color:#fff;font-weight:800}
+  .qline{display:block;width:100%;font-size:1.6rem;font-weight:800;color:var(--brick-dark);
+    margin-bottom:.8vh}
+  .storecmp{width:100%;margin-top:1.8vh;display:flex;flex-direction:column;gap:.9vh}
+  .sctitle{font-size:1.15rem;font-weight:800;color:var(--brick-dark);text-transform:uppercase;
+    letter-spacing:.06em;text-align:left}
+  .scrow{display:flex;align-items:center;gap:1.2vw}
+  .sclab{width:8rem;flex:none;text-align:right;font-weight:700;font-size:1.25rem;color:var(--fg)}
+  .bar{flex:1;height:2.3rem;display:flex;border-radius:6px;overflow:hidden;background:#eceef1;
+    border:1px solid var(--card-line)}
+  .seg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;
+    font-size:1.0rem;font-weight:700;white-space:nowrap}
+  .seg.val{background:var(--brick)}
+  .seg.idx{background:#9aa1ac}
+  .scval{width:8rem;flex:none;text-align:left;font-weight:800;font-size:1.35rem;font-family:var(--mono)}
+  .scval.win{color:var(--win)}
+  .sccap{font-size:1.1rem;color:var(--muted);text-align:left;margin-top:.3vh}
+  .sccap b{color:var(--brick-dark)}
+  .chart{width:100%}
+  .chart svg{width:100%;height:auto;max-width:46rem}
+  .chart text{font-family:var(--sans)}
+
+  /* Title slide */
+  .subtitle{font-size:1.9rem;font-weight:600;color:var(--brick-dark);margin-top:1.8vh}
+  .title-rule{width:8rem;height:5px;background:var(--brick);margin:3.2vh auto}
+  .byline .authors{font-weight:700;font-size:1.7rem;color:var(--fg)}
+  .byline .affil{color:var(--muted);font-size:1.3rem;font-weight:400;margin-top:1.2vh}
 </style>
 </head>
 <body>
 <div class="deck" id="deck">
 
 <!-- 1 TITLE -->
-<section class="slide center">
-  <div class="kicker">tensor-core GPU kernels · quantum dynamics · H100 NVL</div>
-  <h1>Tensor-Core Diagonal Kernels<br>for Hamiltonian Simulation on GPUs</h1>
-  <p class="sub" style="max-width:48ch">A storage-and-layout idea that maps the banded structure of
-     <code>e<sup>−iHt</sup></code> onto <span class="hlg">tensor-core MMA</span> — <span class="hlg">faster</span> than cuSPARSE,
-     with TF32 fidelity that stays effectively exact.</p>
-  <div class="title-meta">
-    <b>Physics Hamiltonians are banded</b> — store them by diagonal, stream them branch-free.<br>
-    Measured up to <b>q = 24 qubits</b> (16.7M dimension), vs cuSPARSE &amp; the HM SpGEMM baseline.
+<section class="slide cover">
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h1>Diagonal-Aware SpMV and SpMSpM Kernels<br>for GPU-Accelerated Hamiltonian Simulation</h1>
+    <div class="title-rule"></div>
+    <div class="byline">
+      <div class="authors">Yuchao Su, Frank Mueller</div>
+      <div class="affil">Department of Computer Science, North Carolina State University</div>
+    </div>
   </div>
 </section>
 
-<!-- 2 PROBLEM -->
+<!-- 2 SpMV & SpMSpM IN HAMILTONIAN SIMULATION -->
 <section class="slide">
-  <h2><span class="tag">01</span>The problem</h2>
-  <p>Simulating quantum dynamics means repeatedly applying the time-evolution operator</p>
-  <div style="text-align:center"><span class="eq">|ψ(t)⟩ = e<sup>−iHt</sup> |ψ(0)⟩ ≈ ( Σ<sub>k</sub> (−iH Δt)<sup>k</sup>/k! )<sup>steps</sup> |ψ⟩</span></div>
-  <ul>
-    <li>The inner loop is <b>sparse matrix–vector</b> (<span class="hl">SpMV</span>, apply H to a state) and
-        <b>sparse matrix–matrix</b> (<span class="hl">SpMSpM</span>, build H<sup>k</sup> / the propagator).</li>
-    <li>Dimension is <code>2<sup>q</sup></code> — at q=24 that's a 16.7M × 16.7M operator. Memory bandwidth is everything.</li>
-    <li>General sparse libraries (cuSPARSE CSR) treat H as an <i>arbitrary</i> sparse matrix and pay for it:
-        per-nonzero column indices, gather/indirection, scattered memory.</li>
-  </ul>
-  <p class="sub">But physics Hamiltonians are <b>not arbitrary</b>.</p>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>SpMV &amp; SpMSpM in Hamiltonian simulation</h2>
+    <p><b class="hl">Hamiltonian simulation</b>, evolving a quantum state forward in time, repeatedly applies the time-evolution operator</p>
+    <span class="eq">|ψ(t)⟩ = e<sup>−iHt</sup> |ψ(0)⟩ ≈ ( Σ<sub>k</sub> (−iH Δt)<sup>k</sup>/k! )<sup>steps</sup> |ψ⟩</span>
+    <p class="muted" style="font-size:1.3rem">Two sparse kernels do all the work in that inner loop:</p>
+    <div class="row" style="margin-top:1.6vh;gap:3vw;align-items:stretch">
+      <div class="card" style="flex:1 1 0;min-width:0;padding:3vh 2.2vw">
+        <h3 style="font-size:1.7rem">SpMV: apply H to a state</h3>
+        <div class="eq" style="font-size:1.5rem;margin:.8vh 0">y = H · x</div>
+        <ul class="oneline">
+          <li>Hot loop of <b>time stepping</b>: each step is one <code>y = Hx</code>.</li>
+          <li>H is 2<sup>q</sup>×2<sup>q</sup> sparse; x is the <b>state vector</b>.</li>
+          <li>Sets the cost of the <b>entire trajectory</b>.</li>
+        </ul>
+      </div>
+      <div class="card" style="flex:1 1 0;min-width:0;padding:3vh 2.2vw">
+        <h3 style="font-size:1.7rem">SpMSpM: multiply two operators</h3>
+        <div class="eq" style="font-size:1.5rem;margin:.8vh 0">C = H · H</div>
+        <ul class="oneline">
+          <li>Builds <b>powers H<sup>k</sup></b> and propagator U = Σ c<sub>k</sub>H<sup>k</sup>.</li>
+          <li><b>Computed once</b>, then reused across many steps.</li>
+          <li>Sparse × sparse <b>fills in</b>; cost grows with the band.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </section>
 
-<!-- 3 OBSERVATION -->
+<!-- 3 PROBLEM -->
 <section class="slide">
-  <h2><span class="tag">02</span>Key observation: they're banded</h2>
-  <div class="row" style="align-items:center">
-    <div class="col">
-      <ul>
-        <li>Local Hamiltonians (Heisenberg, TFIM, Bose–Hubbard) put their nonzeros on a
-            <b>small number of fixed diagonals</b> — same offsets every row.</li>
-        <li>So store <b>by diagonal</b> (DIA): one offset + one contiguous value array per diagonal.</li>
-        <li><span class="hlg">No per-nonzero column index</span> → 4 B/nnz instead of CSR's 8 B/nnz,
-            and access is a <b>regular, coalesced stream</b> — no gather.</li>
-      </ul>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>The problem: general libraries pay for generality</h2>
+    <div class="row" style="align-items:center">
+      <div class="col">
+        <ul style="display:block">
+          <li>Dimension is <code>2<sup>q</sup></code>: at q=24 that's a 16.7M × 16.7M operator. <b>Memory bandwidth is everything.</b></li>
+          <li>General sparse libraries (cuSPARSE CSR) treat H as an <i>arbitrary</i> sparse matrix and pay for it:
+              per-nonzero column indices, gather/indirection, scattered memory.</li>
+          <li>8 B per nonzero (value + 32-bit index), random access, and at q≥21 they fall back to <b>64-bit indices</b>.</li>
+        </ul>
+      </div>
+      <div class="col" style="flex:1.05;text-align:center">
+        <div class="chart"><svg id="dimSvg" viewBox="0 0 720 470" role="img"
+             aria-label="Operator element count and complex-fp32 storage versus qubit count"></svg></div>
+        <div class="muted" style="font-size:1.05rem;margin-top:.4vh">Operator has <code>2<sup>2q</sup></code> elements: a <b>dense</b> store is hopeless (2.3 PB at q=24).</div>
+      </div>
     </div>
-    <div class="col">
-<div class="diag-art">  CSR (general)        DIA (banded)
+    <div class="highlight">But physics Hamiltonians are <b>not arbitrary</b>: their structure is fixed and known.</div>
+  </div>
+</section>
+
+<!-- 4 OBSERVATION -->
+<section class="slide">
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content" style="max-width:96rem">
+    <h2>Key observation: they're banded</h2>
+    <div class="row" style="align-items:center">
+      <div class="col">
+        <div class="qline">Why are they banded?</div>
+        <ul style="display:block">
+          <li>A local Hamiltonian is a sum of <b>Pauli strings</b>
+              <code>H = Σ<sub>j</sub> c<sub>j</sub> P<sub>j</sub></code>, each a tensor product of <code>{I,X,Y,Z}</code>.</li>
+          <li>Each string maps to <b>one fixed diagonal</b>: <code>I,Z</code> stay on it, every <code>X/Y</code> on qubit
+              <code>k</code> shifts the column by <code>±2<sup>k</sup></code>, the <b>same offset for every row</b>.</li>
+          <li>A few-body H has only a <b>handful of strings</b>: nonzeros land on a
+              <b>small set of fixed diagonals</b>. So store <b>by diagonal</b>: one offset + one value array each.</li>
+          <li><span class="hlg">No per-nonzero column index</span>: 4 B/nnz vs CSR's 8 B/nnz,
+              and access is a <b>regular, coalesced stream</b>, no gather.</li>
+        </ul>
+      </div>
+      <div class="col">
+<div class="diag-art">  CSR (general)        diagonal (banded)
   ┌─────────────┐      ┌─────────────┐
   │ <span class="hl">x</span>·· <span class="hl">x</span>········│      │<span class="hlg">╲ ╲   ╲</span>        │
   │ ·<span class="hl">x</span>· ·<span class="hl">x</span>·······│      │ <span class="hlg">╲ ╲   ╲</span>       │
@@ -127,188 +229,230 @@
   └─────────────┘      └─────────────┘
   store col idx        store offset
   per nonzero          per diagonal
-  → scattered          → contiguous stream</div>
+  scattered access     contiguous stream</div>
+      </div>
+    </div>
+    <div class="row" style="align-items:stretch;margin-top:1.4vh;gap:2vw">
+    <div class="note" style="flex:1;margin-top:0;display:flex;align-items:center"><span><b>This is the whole idea:</b> the <span class="hl">Pauli structure</span> of a local Hamiltonian <span class="hl">guarantees</span> a
+       <span class="hl">fixed, banded set of diagonals</span>, trade generality for that structure and build GPU kernels that <span class="hl">stream diagonals</span>.</span></div>
+    <div class="storecmp" style="flex:1.15;margin-top:0">
+      <div class="sctitle">Storage per nonzero</div>
+      <div class="scrow">
+        <div class="sclab">CSR</div>
+        <div class="bar">
+          <div class="seg val" style="width:50%">value 4 B</div>
+          <div class="seg idx" style="width:50%">col index 4 B</div>
+        </div>
+        <div class="scval">8 B/nnz</div>
+      </div>
+      <div class="scrow">
+        <div class="sclab">Diagonal</div>
+        <div class="bar"><div class="seg val" style="width:50%">value 4 B</div></div>
+        <div class="scval win">4 B/nnz</div>
+      </div>
+      <div class="sccap">Offset is stored once per diagonal, so the per-nonzero index disappears: <b>half the footprint, 2× less memory traffic.</b></div>
+    </div>
     </div>
   </div>
-  <div class="note"><b>This is the whole idea:</b> trade generality for the banded structure that's
-     always there in local-Hamiltonian dynamics, then build GPU kernels that stream diagonals.</div>
 </section>
 
-<!-- 4 SPMV RESULT -->
+<!-- 5 WHAT IS DIAGONAL TENSOR-CORE SPMV -->
 <section class="slide">
-  <h2><span class="tag">03</span>Tensor-core SpMV: ~2× over cuSPARSE</h2>
-  <p class="muted" style="margin-bottom:1vh">Each diagonal feeds a TF32 <code>mma.sync</code> tile — the apply of H runs on the tensor cores.</p>
-  <table>
-    <tr><th>Family</th><th>q (dim)</th><th>diags</th><th class="num">vs cuSPARSE</th><th>regime</th></tr>
-    <tr><td>Heisenberg</td><td>8 → 24 (16.7M)</td><td>15–47</td><td class="num win">1.6 – 2.75×</td><td>flat at scale</td></tr>
-    <tr><td>TFIM</td><td>8 → 24 (16.7M)</td><td>17–49</td><td class="num win">1.6 – 2.72×</td><td>flat at scale</td></tr>
-    <tr><td>Bose–Hubbard</td><td>24 (16.7M)</td><td>155</td><td class="num win">2.12×</td><td>wide but dense</td></tr>
-    <tr><td>MaxCut (QUBO)</td><td>12 (4096)</td><td>1</td><td class="num win">4.70×</td><td>1-diagonal peak</td></tr>
-    <tr><td>O₂ (molecular)</td><td>20 (1M)</td><td>3359</td><td class="num neu">2.23×</td><td>very wide band</td></tr>
-    <tr><td>BeH (molecular)</td><td>12 (4096)</td><td>299</td><td class="num lose">0.36×</td><td>too sparse-per-diag</td></tr>
-  </table>
-  <ul>
-    <li class="good">Holds <b>~1.7× even at q24</b> (16.7M rows) where cuSPARSE needs 64-bit indices.</li>
-    <li class="good">TF32 per-element error ~2e-4, but accumulated trajectory infidelity stays <b>~10<sup>−9</sup></b> (see slide 07) — effectively exact.</li>
-  </ul>
-</section>
-
-<!-- 5 HOW THE TC KERNEL WORKS -->
-<section class="slide">
-  <h2><span class="tag">04</span>How the tensor-core kernel works</h2>
-  <div class="row" style="align-items:center">
-    <div class="col">
-      <ul>
-        <li>Each diagonal of H is a constant offset: row <code>i</code> pairs with state entry <code>x[i+off]</code>.</li>
-        <li>Pack the diagonal values into the <b>A operand</b> and the shifted state slices into <b>B</b>, then issue a raw
-            <code>mma.sync.m16n8k8.tf32</code> — the apply <code>y = Hx</code> lands on the <b>tensor cores</b>.</li>
-        <li>Hand-written PTX (not the <code>nvcuda::wmma</code> wrapper) so we control exactly which lanes carry the band — no library overhead.</li>
-      </ul>
-      <div class="note"><b>Why it's fast:</b> the DIA layout turns scattered CSR gathers into
-        contiguous, coalesced loads, and the MMA absorbs the multiply-accumulate — so the kernel runs at memory speed
-        while the tensor cores hide the arithmetic.</div>
-    </div>
-    <div class="col">
-<div class="diag-art">  diagonals → MMA tile
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>What is diagonal tensor-core SpMV?</h2>
+    <p class="muted" style="margin-bottom:1.4vh;font-size:1.32rem">The apply <code>y = Hx</code> with H stored <b class="hl">by diagonal</b>, run on the GPU <b class="hl">tensor cores</b> (TF32 MMA) instead of the usual CUDA-core scalar loop.</p>
+    <div class="row" style="align-items:center">
+      <div class="col">
+        <ul style="display:block">
+          <li>Each diagonal of H is a constant offset: row <code>i</code> pairs with state entry <code>x[i+off]</code>.</li>
+          <li>Pack the diagonal values into the <b>A operand</b> and the shifted state slices into <b>B</b>, then issue a raw
+              <code>mma.sync.m16n8k8.tf32</code>, the apply <code>y = Hx</code> lands on the <b>tensor cores</b>.</li>
+          <li>Hand-written PTX (not the <code>nvcuda::wmma</code> wrapper) so we control exactly which lanes carry the band, no library overhead.</li>
+        </ul>
+        <div class="note"><b>Why it's fast:</b> the diagonal layout turns scattered CSR gathers into
+          contiguous, coalesced loads, and the MMA absorbs the multiply-accumulate, so the kernel runs at memory speed
+          while the tensor cores hide the arithmetic.</div>
+      </div>
+      <div class="col">
+<div class="diag-art">  diagonals into the MMA tile
   ┌──────────────────────┐
   │  A = diagonal values │   <span class="hlg">tensor</span>
   │  ┌───┐               │   <span class="hlg">core</span>
-  │  │<span class="hl">d0</span> │ × <span class="hl">x[i+off0]</span>  │   ───►
+  │  │<span class="hl">d0</span> │ × <span class="hl">x[i+off0]</span>  │   gives
   │  │<span class="hl">d1</span> │ × <span class="hl">x[i+off1]</span>  │   y = Σ d·x
   │  │<span class="hl">d2</span> │ × <span class="hl">x[i+off2]</span>  │
   │  └───┘               │
   └──────────────────────┘
    mma.sync.m16n8k8.tf32
    one instruction / tile</div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- 6 SPMSPM BASIC -->
+<!-- 6 SPMV RESULT -->
 <section class="slide">
-  <h2><span class="tag">05</span>SpMSpM (H·H): beats both baselines, bit-exact</h2>
-  <p class="muted" style="margin-bottom:1vh">Basic <code>gather_flat</code> kernel: flatten diagonal pairs, accumulate into output diagonals — no atomics.</p>
-  <div class="row">
-    <div class="card center">
-      <div class="kicker">vs HM SpGEMM</div>
-      <div class="big g">1.2 – 2.2×</div>
-      <p class="muted" style="font-size:1rem;margin-top:1vh">atomic-add baseline,<br>heis/tfim q8–18</p>
-    </div>
-    <div class="card center">
-      <div class="kicker">vs cuSPARSE SpGEMM</div>
-      <div class="big a">58 – 446×</div>
-      <p class="muted" style="font-size:1rem;margin-top:1vh">cuSPARSE pays a large<br>fixed SpGEMM setup</p>
-    </div>
-    <div class="card center">
-      <div class="kicker">correctness</div>
-      <div class="big g">0</div>
-      <p class="muted" style="font-size:1rem;margin-top:1vh">max|C − H@H|<br><b class="hlg">bit-exact</b></p>
-    </div>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>Tensor-core SpMV: ~2× over cuSPARSE</h2>
+    <p class="muted" style="margin-bottom:1vh">Each diagonal feeds a TF32 <code>mma.sync</code> tile, the apply of H runs on the tensor cores.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Family</th><th>q (dim)</th><th>diags</th><th class="num">vs cuSPARSE</th><th>regime</th></tr>
+      <tr><td>Heisenberg</td><td>8 to 24 (16.7M)</td><td>15–47</td><td class="num win">1.6 – 2.75×</td><td>flat at scale</td></tr>
+      <tr><td>TFIM</td><td>8 to 24 (16.7M)</td><td>17–49</td><td class="num win">1.6 – 2.72×</td><td>flat at scale</td></tr>
+      <tr><td>Bose–Hubbard</td><td>24 (16.7M)</td><td>155</td><td class="num win">2.12×</td><td>wide but dense</td></tr>
+      <tr><td>MaxCut (QUBO)</td><td>12 (4096)</td><td>1</td><td class="num win">4.70×</td><td>1-diagonal peak</td></tr>
+      <tr><td>O₂ (molecular)</td><td>20 (1M)</td><td>3359</td><td class="num neu">2.23×</td><td>very wide band</td></tr>
+      <tr><td>BeH (molecular)</td><td>12 (4096)</td><td>299</td><td class="num lose">0.36×</td><td>too sparse-per-diag</td></tr>
+    </table></div>
+    <ul>
+      <li class="good">Holds <b>~1.7× even at q24</b> (16.7M rows) where cuSPARSE needs 64-bit indices.</li>
+      <li class="good">TF32 per-element error ~2e-4, but accumulated trajectory infidelity stays <b>~10<sup>−9</sup></b> (see slide 09), effectively exact.</li>
+    </ul>
   </div>
-  <ul style="margin-top:2vh">
-    <li>Wins wherever the band fits: spin chains 1.2–2.2× over HM, QUBO 1.3–1.66×.</li>
-    <li>The fill-in of H² is the natural limit (offsets fan out under products) — fixed later with a symmetric/compressed store.</li>
-  </ul>
 </section>
 
-<!-- 7 E2E -->
+<!-- 7 SPMSPM BASIC -->
 <section class="slide">
-  <h2><span class="tag">06</span>Operator build: U = Σ<sub>k</sub> c<sub>k</sub> H<sup>k</sup></h2>
-  <p class="muted" style="margin-bottom:1vh">Full Taylor propagator chain, adaptive order K per matrix. Times in ms (heis).</p>
-  <table>
-    <tr><th>q (dim)</th><th class="num">ours</th><th class="num">HM SpGEMM</th><th class="num">cuSPARSE</th><th class="num">vs HM</th><th class="num">vs cuSPARSE</th></tr>
-    <tr><td>8 (256)</td><td class="num">0.038</td><td class="num">0.095</td><td class="num">17.98</td><td class="num win">2.5×</td><td class="num win">473×</td></tr>
-    <tr><td>10 (1024)</td><td class="num">0.126</td><td class="num">0.165</td><td class="num">19.76</td><td class="num win">1.3×</td><td class="num win">157×</td></tr>
-    <tr><td>12 (4096)</td><td class="num">0.634</td><td class="num">0.793</td><td class="num">34.64</td><td class="num win">1.25×</td><td class="num win">55×</td></tr>
-    <tr><td>14 (16384)</td><td class="num">5.07</td><td class="num">7.57</td><td class="num">65.8</td><td class="num win">1.5×</td><td class="num win">13×</td></tr>
-  </table>
-  <ul>
-    <li>cuSPARSE carries a <b>~15–18 ms fixed setup</b> per SpGEMM → enormous ratio at small q, amortizing as q grows.</li>
-    <li class="good">Against the lean HM baseline we still win <b>1.25–2.5×</b> across the chain — pure structure, no overhead.</li>
-  </ul>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>SpMSpM (H·H): beats both baselines, bit-exact</h2>
+    <p class="muted" style="margin-bottom:1vh">Basic <code>gather_flat</code> kernel: flatten diagonal pairs, accumulate into output diagonals, no atomics.</p>
+    <div class="row">
+      <div class="card">
+        <div class="kicker">vs HM SpGEMM</div>
+        <div class="big g">1.2 – 2.2×</div>
+        <p class="muted" style="font-size:1rem;margin-top:1vh">atomic-add baseline,<br>heis/tfim q8–18</p>
+      </div>
+      <div class="card">
+        <div class="kicker">vs cuSPARSE SpGEMM</div>
+        <div class="big a">58 – 446×</div>
+        <p class="muted" style="font-size:1rem;margin-top:1vh">cuSPARSE pays a large<br>fixed SpGEMM setup</p>
+      </div>
+      <div class="card">
+        <div class="kicker">correctness</div>
+        <div class="big g">0</div>
+        <p class="muted" style="font-size:1rem;margin-top:1vh">max|C − H@H|<br><b class="hlg">bit-exact</b></p>
+      </div>
+    </div>
+    <ul style="margin-top:2vh">
+      <li>Wins wherever the band fits: spin chains 1.2–2.2× over HM, QUBO 1.3–1.66×.</li>
+      <li>The fill-in of H² is the natural limit (offsets fan out under products), fixed later with a symmetric/compressed store.</li>
+    </ul>
+  </div>
 </section>
 
-<!-- 8 FIDELITY -->
+<!-- 8 E2E -->
 <section class="slide">
-  <h2><span class="tag">07</span>Accuracy: "fast" doesn't cost fidelity</h2>
-  <div class="row" style="align-items:center">
-    <div class="col">
-      <ul>
-        <li>SpMV CUDA-core path is <b>exact fp32</b> (relerr 0 on representable inputs).</li>
-        <li>SpMSpM is <b>bit-exact</b> (max|C − H@H| = 0).</li>
-        <li>Even the TF32 evolution stays effectively exact: infidelity
-            <code>1e-9 → 6e-9</code> over <b>1000 steps to q24</b>.</li>
-      </ul>
-      <div class="note"><b>Framing:</b> over a full 1000-step trajectory at 16.7M dimension,
-        the accumulated infidelity is ~10<sup>−9</sup> — below any physical observable. We report it as exact.</div>
-    </div>
-    <div class="col">
-      <table>
-        <tr><th>family</th><th>q</th><th class="num">TF32 infidelity</th></tr>
-        <tr><td>heis</td><td>16</td><td class="num">3.8e-9</td></tr>
-        <tr><td>heis</td><td>24</td><td class="num">5.8e-9</td></tr>
-        <tr><td>tfim</td><td>24</td><td class="num">2.9e-9</td></tr>
-        <tr><td>maxcut</td><td>20</td><td class="num">1.7e-9</td></tr>
-        <tr><td>BeH (wide)</td><td>12</td><td class="num">3.6e-6</td></tr>
-        <tr><td>O₂ (wide)</td><td>16</td><td class="num">1.1e-6</td></tr>
-      </table>
-      <p class="muted" style="font-size:.95rem;margin-top:1.2vh">1000 Taylor steps, Δt-scaled. Molecular wider but still small.</p>
-    </div>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>Operator build: U = Σ<sub>k</sub> c<sub>k</sub> H<sup>k</sup></h2>
+    <p class="muted" style="margin-bottom:1vh">Full Taylor propagator chain, adaptive order K per matrix. Times in ms (heis).</p>
+    <div class="tablewrap"><table>
+      <tr><th>q (dim)</th><th class="num">ours</th><th class="num">HM SpGEMM</th><th class="num">cuSPARSE</th><th class="num">vs HM</th><th class="num">vs cuSPARSE</th></tr>
+      <tr><td>8 (256)</td><td class="num">0.038</td><td class="num">0.095</td><td class="num">17.98</td><td class="num win">2.5×</td><td class="num win">473×</td></tr>
+      <tr><td>10 (1024)</td><td class="num">0.126</td><td class="num">0.165</td><td class="num">19.76</td><td class="num win">1.3×</td><td class="num win">157×</td></tr>
+      <tr><td>12 (4096)</td><td class="num">0.634</td><td class="num">0.793</td><td class="num">34.64</td><td class="num win">1.25×</td><td class="num win">55×</td></tr>
+      <tr><td>14 (16384)</td><td class="num">5.07</td><td class="num">7.57</td><td class="num">65.8</td><td class="num win">1.5×</td><td class="num win">13×</td></tr>
+    </table></div>
+    <ul>
+      <li>cuSPARSE carries a <b>~15–18 ms fixed setup</b> per SpGEMM: enormous ratio at small q, amortizing as q grows.</li>
+      <li class="good">Against the lean HM baseline we still win <b>1.25–2.5×</b> across the chain, pure structure, no overhead.</li>
+    </ul>
   </div>
 </section>
 
-<!-- 9 CRITERION -->
-<section class="slide center">
-  <h2 style="align-self:flex-start"><span class="tag">08</span>When does it win? One number.</h2>
-  <div class="eq" style="font-size:2.0rem">num_diags / ( 2 · avg_nnz_per_row )  ≲  2</div>
-  <div class="row" style="width:100%;margin-top:2vh">
-    <div class="card center">
-      <div class="kicker">≲ 2 — we win</div>
-      <p style="margin-top:1vh">Heisenberg (1.8), TFIM, Bose–Hubbard, QUBO.<br>
-        <span class="hlg">Narrow, dense bands</span> — regular streaming dominates.</p>
-    </div>
-    <div class="card center">
-      <div class="kicker">≫ 2 — cuSPARSE wins</div>
-      <p style="margin-top:1vh">BeH (4.8), O₂ (8.4): wide bands that are <span class="lose">86–93% explicit zeros</span>.
-        DIA streams the padding; cuSPARSE skips it.</p>
-    </div>
-  </div>
-  <p class="sub" style="max-width:60ch">The win is <b>regular branch-free streaming</b>, not raw byte count —
-     confirmed three ways (compressed-DIA, ELL, 2D tiling all lost). These kernels are latency-bound.</p>
-</section>
-
-<!-- 10 SUMMARY -->
+<!-- 9 FIDELITY -->
 <section class="slide">
-  <h2><span class="tag">09</span>Summary &amp; what's next</h2>
-  <div class="row">
-    <div class="col">
-      <h3>The idea, distilled</h3>
-      <ul>
-        <li class="good"><b>DIA layout + tensor-core SpMV</b>: ~2× cuSPARSE to q24, TF32 fidelity ~1e-9.</li>
-        <li class="good"><b>gather_flat SpMSpM</b>: 1.2–2.2× over HM, 58–446× over cuSPARSE, bit-exact.</li>
-        <li class="good"><b>Operator build</b>: 1.25–2.5× over HM, 13–470× over cuSPARSE.</li>
-        <li class="good">Clean win criterion: <code>num_diags/(2·avg_nnz) ≲ 2</code>.</li>
-      </ul>
-    </div>
-    <div class="col">
-      <h3>Next (beyond this basic version)</h3>
-      <ul>
-        <li><b>Symmetric / compressed store</b> — already extends SpMSpM reach (this deck deliberately shows the basic kernel).</li>
-        <li><b>Block-DIA + batched SpMM</b> — fill the MMA tile with multiple state vectors (block-Krylov) so the tensor cores do useful work per load.</li>
-        <li><b>Pauli-basis SpMSpM</b> — represent H by its Pauli terms (~280× more compact),
-            build operators algebraically to dodge the H<sup>k</sup> fill-in wall.</li>
-      </ul>
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>Accuracy: "fast" doesn't cost fidelity</h2>
+    <div class="row" style="align-items:center">
+      <div class="col">
+        <ul style="display:block">
+          <li>SpMV CUDA-core path is <b>exact fp32</b> (relerr 0 on representable inputs).</li>
+          <li>SpMSpM is <b>bit-exact</b> (max|C − H@H| = 0).</li>
+          <li>Even the TF32 evolution stays effectively exact: infidelity
+              <code>1e-9 to 6e-9</code> over <b>1000 steps to q24</b>.</li>
+        </ul>
+        <div class="note"><b>Framing:</b> over a full 1000-step trajectory at 16.7M dimension,
+          the accumulated infidelity is ~10<sup>−9</sup>, below any physical observable. We report it as exact.</div>
+      </div>
+      <div class="col">
+        <table>
+          <tr><th>family</th><th>q</th><th class="num">TF32 infidelity</th></tr>
+          <tr><td>heis</td><td>16</td><td class="num">3.8e-9</td></tr>
+          <tr><td>heis</td><td>24</td><td class="num">5.8e-9</td></tr>
+          <tr><td>tfim</td><td>24</td><td class="num">2.9e-9</td></tr>
+          <tr><td>maxcut</td><td>20</td><td class="num">1.7e-9</td></tr>
+          <tr><td>BeH (wide)</td><td>12</td><td class="num">3.6e-6</td></tr>
+          <tr><td>O₂ (wide)</td><td>16</td><td class="num">1.1e-6</td></tr>
+        </table>
+        <p class="muted" style="font-size:.95rem;margin-top:1.2vh;text-align:left">1000 Taylor steps, Δt-scaled. Molecular wider but still small.</p>
+      </div>
     </div>
   </div>
-  <p class="sub">Bottom line: for local-Hamiltonian dynamics, <b>knowing the matrix is banded</b> is worth ~2× on the hot loop — at TF32 fidelity that's indistinguishable from exact.</p>
+</section>
+
+<!-- 10 CRITERION -->
+<section class="slide">
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>When does it win? One number.</h2>
+    <div class="eq" style="font-size:2.0rem">num_diags / ( 2 · avg_nnz_per_row )  ≲  2</div>
+    <div class="row" style="margin-top:2vh">
+      <div class="card">
+        <div class="kicker">≲ 2: we win</div>
+        <p style="margin-top:1vh">Heisenberg (1.8), TFIM, Bose–Hubbard, QUBO.<br>
+          <span class="hlg">Narrow, dense bands</span>, regular streaming dominates.</p>
+      </div>
+      <div class="card">
+        <div class="kicker">≫ 2: cuSPARSE wins</div>
+        <p style="margin-top:1vh">BeH (4.8), O₂ (8.4): wide bands that are <span class="lose">86–93% explicit zeros</span>.
+          Diagonal streams the padding; cuSPARSE skips it.</p>
+      </div>
+    </div>
+    <p class="sub">The win is <b>regular branch-free streaming</b>, not raw byte count,
+       confirmed three ways (compressed-diagonal, ELL, 2D tiling all lost). These kernels are latency-bound.</p>
+  </div>
+</section>
+
+<!-- 11 SUMMARY -->
+<section class="slide">
+  <div class="brick"><div class="wordmark"><b>NC&nbsp;State</b><span>University</span></div></div>
+  <div class="content">
+    <h2>Summary &amp; what's next</h2>
+    <div class="row">
+      <div class="col">
+        <h3>The idea, distilled</h3>
+        <ul style="display:block">
+          <li class="good"><b>Diagonal layout + tensor-core SpMV</b>: ~2× cuSPARSE to q24, TF32 fidelity ~1e-9.</li>
+          <li class="good"><b>gather_flat SpMSpM</b>: 1.2–2.2× over HM, 58–446× over cuSPARSE, bit-exact.</li>
+          <li class="good"><b>Operator build</b>: 1.25–2.5× over HM, 13–470× over cuSPARSE.</li>
+          <li class="good">Clean win criterion: <code>num_diags/(2·avg_nnz) ≲ 2</code>.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>Next (beyond this basic version)</h3>
+        <ul style="display:block">
+          <li><b>Symmetric / compressed store</b>, already extends SpMSpM reach (this deck deliberately shows the basic kernel).</li>
+          <li><b>Block-diagonal + batched SpMM</b>, fill the MMA tile with multiple state vectors (block-Krylov) so the tensor cores do useful work per load.</li>
+          <li><b>Pauli-basis SpMSpM</b>, represent H by its Pauli terms (~280× more compact),
+              build operators algebraically to dodge the H<sup>k</sup> fill-in wall.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="sub">Bottom line: for local-Hamiltonian dynamics, <b>knowing the matrix is banded</b> is worth ~2× on the hot loop, at TF32 fidelity that's indistinguishable from exact.</p>
+  </div>
 </section>
 
 <div class="progress" id="progress"></div>
 </div>
 
 <div class="footer">
-  <span id="footL">Diagonal-Layout GPU Kernels · H100 NVL</span>
-  <span id="footR">1 / 10</span>
+  <span id="footL"></span>
+  <span id="footR">1 / 11</span>
 </div>
 
 <script>
@@ -327,8 +471,58 @@
     else if(e.key==='End'){show(slides.length-1);}
     else if(e.key==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
   });
-  document.addEventListener('click',e=>{ if(e.clientX>window.innerWidth*0.5)show(i+1);else show(i-1); });
+  document.addEventListener('click',e=>{ show(i+1); });
   show(0);
+
+  /* ---- exponential dimension / storage chart ---- */
+  (function drawDim(){
+    const svg=document.getElementById('dimSvg'); if(!svg) return;
+    const W=720,H=470, mL=92,mR=112,mT=30,mB=66;
+    const RED='#CC0000', DARK='#990000', AX='#1a1a1a', GR='#dcdee2', MUT='#5b6470';
+    const qmin=8,qmax=24, ymax=Math.pow(2,2*qmax);  // 2^(2q) elements, peak 2^48
+    const px=q=>mL+(q-qmin)/(qmax-qmin)*(W-mL-mR);
+    const py=v=>H-mB-v/ymax*(H-mT-mB);
+    const NS='http://www.w3.org/2000/svg';
+    const el=(n,a,t)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;svg.appendChild(e);return e;};
+
+    // gridlines + dual y ticks (left = operator elements 2^2q, right = complex-fp32 storage = elements*8 B)
+    const yt=[0,.25,.5,.75,1];
+    const dimLab=['0','70T','141T','211T','281T'];
+    const stoLab=['0','0.6','1.1','1.7','2.3'];
+    yt.forEach((f,k)=>{
+      const y=py(f*ymax);
+      el('line',{x1:mL,y1:y,x2:W-mR,y2:y,stroke:GR,'stroke-width':1});
+      el('text',{x:mL-12,y:y+5,'text-anchor':'end','font-size':16,fill:DARK},dimLab[k]);
+      el('text',{x:W-mR+12,y:y+5,'text-anchor':'start','font-size':16,fill:MUT},stoLab[k]);
+    });
+    // axes
+    el('line',{x1:mL,y1:mT,x2:mL,y2:H-mB,stroke:AX,'stroke-width':2});
+    el('line',{x1:W-mR,y1:mT,x2:W-mR,y2:H-mB,stroke:MUT,'stroke-width':2});
+    el('line',{x1:mL,y1:H-mB,x2:W-mR,y2:H-mB,stroke:AX,'stroke-width':2});
+    // x ticks
+    [8,12,16,20,24].forEach(q=>{
+      const x=px(q);
+      el('line',{x1:x,y1:H-mB,x2:x,y2:H-mB+6,stroke:AX,'stroke-width':2});
+      el('text',{x:x,y:H-mB+26,'text-anchor':'middle','font-size':16,fill:AX},q);
+    });
+    // curve y = 2^(2q)  (operator element count)
+    let d='';
+    for(let q=qmin;q<=qmax;q++){d+=(q===qmin?'M':'L')+px(q).toFixed(1)+' '+py(Math.pow(2,2*q)).toFixed(1)+' ';}
+    el('path',{d:d,fill:'none',stroke:RED,'stroke-width':3.5,'stroke-linejoin':'round'});
+    // markers (labels placed left of the point, vertically centered, to avoid axis titles)
+    [[22,'18T / 0.14 PB'],[23,'70T / 0.56 PB'],[24,'281T / 2.3 PB']].forEach(([q,t])=>{
+      const x=px(q),y=py(Math.pow(2,2*q));
+      el('circle',{cx:x,cy:y,r:5.5,fill:RED});
+      el('text',{x:x-12,y:y+5,'text-anchor':'end','font-size':16,'font-weight':700,fill:DARK},t);
+    });
+    // axis titles, rotated along each axis so they never overlap the curve/labels
+    const yc=(mT+H-mB)/2;
+    el('text',{x:22,y:yc,'text-anchor':'middle','font-size':16,'font-weight':700,fill:DARK,
+      transform:'rotate(-90 22 '+yc+')'},'Operator elements  (2^2q)');
+    el('text',{x:W-20,y:yc,'text-anchor':'middle','font-size':16,'font-weight':700,fill:MUT,
+      transform:'rotate(90 '+(W-20)+' '+yc+')'},'complex-fp32 storage (PB)');
+    el('text',{x:(mL+W-mR)/2,y:H-14,'text-anchor':'middle','font-size':17,'font-weight':700,fill:AX},'qubits  q');
+  })();
 </script>
 </body>
 </html>
