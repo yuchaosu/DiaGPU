@@ -145,3 +145,111 @@ void launch_tc_spmv_regdirect(
     tc_spmv_regdirect_kernel<<<n_blocks, WARPS_PER_BLOCK * 32, 0, stream>>>(
         R, d_x, x_size, d_y);
 }
+
+/* ------------------------------------------------------------------ *
+ * Fused real+imag SpMV:  yr = H*xr ,  yi = H*xi  (same real H).
+ *
+ * The recon (A) fragment is loaded ONCE per (warp, diagonal-batch) and
+ * fed to FOUR MMAs — top/bottom x real/imag — so the dominant recon
+ * traffic is read once instead of twice across two separate launches.
+ * At large q the matrix (D*N floats) dwarfs the vectors, so this ~halves
+ * the DRAM traffic of a complex apply. Single-state NV=2 batch (see
+ * dailyNote/2026-06-21.md §5); a wider TC-SpMM needs block/multi-state.
+ * Costs more registers (4 accumulators) -> watch occupancy.
+ * ------------------------------------------------------------------ */
+__global__ void tc_spmv_regdirect_fused_kernel(
+    ReconView    R,
+    const float* xr,
+    const float* xi,
+    int          x_size,
+    float*       yr,
+    float*       yi)
+{
+    const int warps_per_block = blockDim.x >> 5;
+    const int global_warp =
+        static_cast<int>(blockIdx.x) * warps_per_block + (threadIdx.x >> 5);
+    const int tile_row = global_warp * MMA_M;
+    if (tile_row >= R.rows) return;
+
+    const int lane = static_cast<int>(threadIdx.x) & 31;
+    const int g    = lane >> 2;
+    const int t    = lane & 3;
+
+    float acc_top_r[4] = {0.f, 0.f, 0.f, 0.f};
+    float acc_bot_r[4] = {0.f, 0.f, 0.f, 0.f};
+    float acc_top_i[4] = {0.f, 0.f, 0.f, 0.f};
+    float acc_bot_i[4] = {0.f, 0.f, 0.f, 0.f};
+
+    for (int dk = 0; dk < R.num_diags; dk += MMA_K) {
+        const int di0 = dk + t;
+        const int di4 = dk + t + 4;
+        const int off0 = (di0 < R.num_diags) ? R.diag_offsets[di0] : 0;
+        const int off4 = (di4 < R.num_diags) ? R.diag_offsets[di4] : 0;
+        const bool v0 = (di0 < R.num_diags);
+        const bool v4 = (di4 < R.num_diags);
+
+        /* --- A fragment: loaded once, reused for real AND imag. --- */
+        uint32_t A[4] = {0u, 0u, 0u, 0u};
+        if (v0) {
+            int c = tile_row + g + off0;
+            if (c >= 0 && c < R.cols) A[0] = to_tf32(R.values[(size_t)di0 * R.cols + c]);
+            c = tile_row + g + 8 + off0;
+            if (c >= 0 && c < R.cols) A[1] = to_tf32(R.values[(size_t)di0 * R.cols + c]);
+        }
+        if (v4) {
+            int c = tile_row + g + off4;
+            if (c >= 0 && c < R.cols) A[2] = to_tf32(R.values[(size_t)di4 * R.cols + c]);
+            c = tile_row + g + 8 + off4;
+            if (c >= 0 && c < R.cols) A[3] = to_tf32(R.values[(size_t)di4 * R.cols + c]);
+        }
+
+        /* --- B fragments for both components (n = g, and n = g+8). --- */
+        uint32_t Bt_r[2] = {0u, 0u}, Bb_r[2] = {0u, 0u};
+        uint32_t Bt_i[2] = {0u, 0u}, Bb_i[2] = {0u, 0u};
+        if (v0) {
+            int xt = tile_row + g + off0;
+            if (xt >= 0 && xt < x_size) { Bt_r[0] = to_tf32(xr[xt]); Bt_i[0] = to_tf32(xi[xt]); }
+            int xb = tile_row + g + 8 + off0;
+            if (xb >= 0 && xb < x_size) { Bb_r[0] = to_tf32(xr[xb]); Bb_i[0] = to_tf32(xi[xb]); }
+        }
+        if (v4) {
+            int xt = tile_row + g + off4;
+            if (xt >= 0 && xt < x_size) { Bt_r[1] = to_tf32(xr[xt]); Bt_i[1] = to_tf32(xi[xt]); }
+            int xb = tile_row + g + 8 + off4;
+            if (xb >= 0 && xb < x_size) { Bb_r[1] = to_tf32(xr[xb]); Bb_i[1] = to_tf32(xi[xb]); }
+        }
+
+        mma_m16n8k8_tf32(acc_top_r, A, Bt_r);
+        mma_m16n8k8_tf32(acc_bot_r, A, Bb_r);
+        mma_m16n8k8_tf32(acc_top_i, A, Bt_i);
+        mma_m16n8k8_tf32(acc_bot_i, A, Bb_i);
+    }
+
+    if (g == 2 * t) {
+        const int r_top = tile_row + g;
+        const int r_bot = tile_row + 8 + g;
+        if (r_top < R.rows) { yr[r_top] = acc_top_r[0]; yi[r_top] = acc_top_i[0]; }
+        if (r_bot < R.rows) { yr[r_bot] = acc_bot_r[2]; yi[r_bot] = acc_bot_i[2]; }
+    } else if (g == 2 * t + 1) {
+        const int r_top = tile_row + g;
+        const int r_bot = tile_row + 8 + g;
+        if (r_top < R.rows) { yr[r_top] = acc_top_r[1]; yi[r_top] = acc_top_i[1]; }
+        if (r_bot < R.rows) { yr[r_bot] = acc_bot_r[3]; yi[r_bot] = acc_bot_i[3]; }
+    }
+}
+
+void launch_tc_spmv_regdirect_fused(
+    ReconView    R,
+    const float* d_xr,
+    const float* d_xi,
+    int          x_size,
+    float*       d_yr,
+    float*       d_yi,
+    cudaStream_t stream)
+{
+    const int n_tiles = (R.rows + MMA_M - 1) / MMA_M;
+    if (n_tiles == 0) return;
+    const int n_blocks = (n_tiles + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK;
+    tc_spmv_regdirect_fused_kernel<<<n_blocks, WARPS_PER_BLOCK * 32, 0, stream>>>(
+        R, d_xr, d_xi, x_size, d_yr, d_yi);
+}

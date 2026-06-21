@@ -142,3 +142,13 @@ void launch_tc_spmv_regdirect(
     int          x_size,
     float*       d_y,
     cudaStream_t stream = 0);
+
+/* Fused real+imag apply: yr = H*xr, yi = H*xi with one recon read. */
+void launch_tc_spmv_regdirect_fused(
+    ReconView    R,
+    const float* d_xr,
+    const float* d_xi,
+    int          x_size,
+    float*       d_yr,
+    float*       d_yi,
+    cudaStream_t stream = 0);
