@@ -155,7 +155,11 @@ void launch_tc_spmv_regdirect(
  * At large q the matrix (D*N floats) dwarfs the vectors, so this ~halves
  * the DRAM traffic of a complex apply. Single-state NV=2 batch (see
  * dailyNote/2026-06-21.md §5); a wider TC-SpMM needs block/multi-state.
- * Costs more registers (4 accumulators) -> watch occupancy.
+ * Costs more registers (48 vs 38; 16 are mandatory MMA-output accs).
+ * Note: __launch_bounds__ to raise occupancy does NOT help — the kernel
+ * is at ~86-89% of its DRAM-traffic ceiling, not occupancy-limited;
+ * forcing <=39 regs spills the accumulators and collapses to 1.16x
+ * (measured sweep, dailyNote/2026-06-21.md §5). Left at natural 48 regs.
  * ------------------------------------------------------------------ */
 __global__ void tc_spmv_regdirect_fused_kernel(
     ReconView    R,
