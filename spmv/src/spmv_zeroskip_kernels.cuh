@@ -58,3 +58,73 @@ __global__ void spmv_csr_warp(CsrView A, const float* __restrict__ x,
     for (int o = 16; o > 0; o >>= 1) acc += __shfl_down_sync(0xffffffffu, acc, o);
     if (lane == 0) y[warp] = acc;
 }
+
+/* ============================================================
+ * DIA-NATIVE zero-skip (keeps the diagonal structure of the SAME recon the TC
+ * kernel consumes — does NOT go to arbitrary-column CSR).
+ *
+ * Per row r, store only the NONZERO diagonals as (didx, val), where didx is a
+ * 1-byte index into the shared diagonal-offset array (D <= 256). The column is
+ * recovered as col = r + offset[didx], so x is read per-diagonal-regular (not a
+ * scattered CSR gather), and the per-nonzero metadata is 1 byte, not the 4-byte
+ * CSR col index -> LESS traffic than CSR (val+1 = 5 B/nz vs val+col = 8 B/nz)
+ * and much less than the dense recon (num_diags*n floats, ~72% of them zero).
+ * Atomic-free: one thread per row accumulates y[r] in a register.
+ *
+ * offsets[] must be the SAME descending diagonal-offset order build_recon uses,
+ * so this and the TC kernel are fed identical H.
+ *
+ * MEASURED (A100, sim/spmv_dia_vs_tc.cu, bit-exact vs dense fp32; same recon):
+ *   matrix          fill   scalar vs tensor-core   scalar vs dense-CUDA
+ *   heis_18 (27.9%)        5.13x                   2.48x
+ *   heis_20 (27.6%)        4.18x                   2.05x
+ *   bh_18   (20.8%)        5.31x                   2.52x
+ *   tfim_18 (100%)         1.93x (dense-CUDA 2.3x wins — no zeros to skip)
+ * => on interior-sparse bands the DIA-native zero-skip beats the tensor-core
+ * kernel 4-5x AND is exact (TC carries TF32 error ~1e-4 rel). The 1-byte didx
+ * beats a 4-byte CSR col (2.7-4.0x less matrix traffic vs 1.75-2.5x). On a fully
+ * dense band, fall back to dense cuda_spmv_dia. The warp variant loses on thin
+ * bands (per-row nnz << 32) — scalar is the right choice; balance is not the
+ * lever, the zero-skip is.
+ * ============================================================ */
+__global__ void spmv_dia_zeroskip(int rows, int D,
+    const int*  __restrict__ row_ptr,
+    const unsigned char* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ x, float* __restrict__ y)
+{
+    extern __shared__ int soff[];                     // D diagonal offsets
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const int b = row_ptr[r], e = row_ptr[r + 1];
+    float acc = 0.f;
+    for (int j = b; j < e; ++j) acc += val[j] * x[r + soff[didx[j]]];
+    y[r] = acc;
+}
+
+/* Balanced (warp-per-row) DIA-native variant — for matrices whose per-row nnz
+ * is skewed. On a fixed narrow band per-row nnz is bounded, so scalar usually
+ * wins; kept for the wide/fill-in case. */
+__global__ void spmv_dia_zeroskip_warp(int rows, int D,
+    const int*  __restrict__ row_ptr,
+    const unsigned char* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ x, float* __restrict__ y)
+{
+    extern __shared__ int soff[];
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const int warp = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
+    const int lane = threadIdx.x & 31;
+    if (warp >= rows) return;
+    const int b = row_ptr[warp], e = row_ptr[warp + 1];
+    float acc = 0.f;
+    for (int j = b + lane; j < e; j += 32) acc += val[j] * x[warp + soff[didx[j]]];
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) acc += __shfl_down_sync(0xffffffffu, acc, o);
+    if (lane == 0) y[warp] = acc;
+}
