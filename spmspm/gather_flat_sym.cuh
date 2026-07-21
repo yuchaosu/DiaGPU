@@ -25,7 +25,10 @@
 #include <vector>
 #include <cstddef>
 
+#ifndef DIAGPU_GPAIR_DEFINED
+#define DIAGPU_GPAIR_DEFINED
 struct GPair { size_t ab, bb; int ash, bsh, al, bl; };
+#endif
 
 /* Pure pair-consumer: uniform 1-D tiles over (C-diag, position). No atomics,
  * no resolve-sync — the block's pair list is loaded into smem once, then ILP

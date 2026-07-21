@@ -105,6 +105,69 @@ __global__ void spmv_dia_zeroskip(int rows, int D,
     y[r] = acc;
 }
 
+/* ---- 2-byte diagonal-index variant for WIDE bands (D > 256, up to 65535). ----
+ * Identical to spmv_dia_zeroskip but didx is uint16 so it covers the fill-in
+ * families (O2 D~5329 etc.) while STAYING DIA-based (col = row + offset[didx]);
+ * we never fall back to a 4-byte-col CSR gather. Traffic 6 B/nz (val+2) vs the
+ * 1-byte kernel's 5 B/nz — still below CSR's 8 B/nz. Same shared-offset scheme. */
+__global__ void spmv_dia_zeroskip_u16(int rows, int D,
+    const int*  __restrict__ row_ptr,
+    const unsigned short* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ x, float* __restrict__ y)
+{
+    extern __shared__ int soff[];                     // D diagonal offsets
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const int b = row_ptr[r], e = row_ptr[r + 1];
+    float acc = 0.f;
+    for (int j = b; j < e; ++j) acc += val[j] * x[r + soff[didx[j]]];
+    y[r] = acc;
+}
+
+/* ---- int64 row-pointer variants for LARGE matrices (nnz > INT32_MAX). ----
+ * heis_28 / qmaxcut_28 / fermi_28 have nnz ~4-7e9, overflowing 32-bit row_ptr
+ * and the j index. These take a 64-bit row_ptr and index the nonzero arrays
+ * with a 64-bit j; col indices stay 32-bit (col < n <= 2^28). One thread/row. */
+__global__ void spmv_dia_zeroskip_i64(long long rows, int D,
+    const long long* __restrict__ row_ptr,
+    const unsigned char* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ x, float* __restrict__ y)
+{
+    extern __shared__ int soff[];
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const long long b = row_ptr[r], e = row_ptr[r + 1];
+    float acc = 0.f;
+    for (long long j = b; j < e; ++j) acc += val[j] * x[r + soff[didx[j]]];
+    y[r] = acc;
+}
+
+__global__ void spmv_dia_zeroskip_u16_i64(long long rows, int D,
+    const long long* __restrict__ row_ptr,
+    const unsigned short* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ x, float* __restrict__ y)
+{
+    extern __shared__ int soff[];
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const long long b = row_ptr[r], e = row_ptr[r + 1];
+    float acc = 0.f;
+    for (long long j = b; j < e; ++j) acc += val[j] * x[r + soff[didx[j]]];
+    y[r] = acc;
+}
+
 /* Balanced (warp-per-row) DIA-native variant — for matrices whose per-row nnz
  * is skewed. On a fixed narrow band per-row nnz is bounded, so scalar usually
  * wins; kept for the wide/fill-in case. */
