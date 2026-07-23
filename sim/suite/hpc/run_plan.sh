@@ -38,7 +38,7 @@ bn(){ basename "$1" .txt; }
 
 # ---------- P1.1 SpMV kernel comparison ----------
 echo "== P1.1 SpMV -> $OUT/spmv_kernel.csv =="
-echo "file,q,D,fill,zs_ms,tc_ms,dense_ms,cusparse_ms,zs_vs_tc,zs_vs_dense,zs_vs_cusparse,drawloom_ms" > $OUT/spmv_kernel.csv
+echo "file,q,D,fill,zs_ms,tc_ms,dense_ms,cusparse_ms,zs_vs_tc,zs_vs_dense,zs_vs_cusparse,drawloom_ms,ours_kernel,ours_vs_cusparse" > $OUT/spmv_kernel.csv
 for m in $MATS; do p=$DIA/$m.txt; [ -f "$p" ] || { echo "  skip $m"; continue; }
   line=$($BIN/spmv_dia_vs_tc "$p" 200 --csv 2>/dev/null | grep '^CSV,')
   [ -z "$line" ] && { echo "  $m: OOM/none"; continue; }
@@ -46,7 +46,8 @@ for m in $MATS; do p=$DIA/$m.txt; [ -f "$p" ] || { echo "  skip $m"; continue; }
   # CSV: ,file,n,D,fill,nnz,zsv,tc,dense,zs,csp,zs_vs_tc,zs_vs_dense,zs_vs_csp,relerr,bw,skip
   dl=na; if [ -x "$DRAW" ]; then $BIN/dia_to_mtx "$p" $BIN/_p.mtx >/dev/null 2>&1
     dl=$(cd "$(dirname $DRAW)" && OMP_NUM_THREADS=16 ./myfloat -filename $BIN/_p.mtx 2>/dev/null | grep -oE 'drawloom time:[[:space:]]*[0-9.]+' | grep -oE '[0-9.]+$'); dl=${dl:-na}; fi
-  echo "$line" | awk -F, -v q=$q -v dl=$dl '{gsub(/.*\//,"",$2); printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",$2,q,$4,$5,$10,$8,$9,$11,$12,$13,$14,dl}' >> $OUT/spmv_kernel.csv
+  # harness CSV (leading CSV token = $1): ... skip=$17, then ours_kernel=$18, ours_ms=$19, ours_vs_csp=$20 (ZEROSKIP=auto selection)
+  echo "$line" | awk -F, -v q=$q -v dl=$dl '{gsub(/.*\//,"",$2); printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",$2,q,$4,$5,$10,$8,$9,$11,$12,$13,$14,dl,$18,$20}' >> $OUT/spmv_kernel.csv
   echo "  ok $m"
 done
 

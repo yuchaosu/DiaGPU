@@ -169,6 +169,21 @@ int main(int argc,char**argv){
     const char* zsv=use_u16?"dia2B":"dia1B";
     auto spd=[&](float a,float b){ return (a>0&&b>0)? a/b : -1.f; };
 
+    // ---- kernel-selection parameter: ZEROSKIP = auto (default) | on | off ----
+    // Zero-skip only pays off when the band HAS structural zeros to drop; on a
+    // 0-zeros (fully dense) band the 1-byte diagonal index is pure overhead and
+    // dense-CUDA wins (measured: diagonal class 0.82x). 'auto' therefore turns
+    // zero-skip OFF when nnz == stored-band (no zeros), falling back to dense.
+    const char* zsenv=getenv("ZEROSKIP"); std::string zsmode=zsenv?zsenv:"auto";
+    const bool has_zeros = (int64_t)nnz < (int64_t)H.nnz;
+    const bool auto_zs   = has_zeros && D>1;   // zero-skip pays only when there ARE
+                                               // zeros to drop AND >1 diagonal; a single
+                                               // diagonal (D=1) is contiguous so its index
+                                               // is redundant -> dense wins (measured).
+    const bool use_zs = (zsmode=="on") ? true : (zsmode=="off") ? false : auto_zs;
+    const float ours_ms   = use_zs ? zs_ms : dense_ms;         // selected CUDA-core kernel
+    const char* ours_kern = use_zs ? zsv   : "dense";
+
     if(!csv){
         printf("=== SpMV  file=%s  n=%d  D=%d  fill=%.1f%%  nnz=%lld  variant=%s%s ===\n",
                argv[1],n,D,fill,(long long)nnz,zsv, do_recon?"":" [recon N/A]");
@@ -176,15 +191,18 @@ int main(int argc,char**argv){
         printf("  dense CUDA        : %s ms\n", dense_ms>0?std::to_string(dense_ms).c_str():"N/A");
         printf("  DIA zero-skip     : %.5f ms   (%.2fx vs TC, %.2fx vs dense, %.2fx vs cuSPARSE)\n",
                zs_ms,spd(tc_ms,zs_ms),spd(dense_ms,zs_ms),spd(csp_ms,zs_ms));
+        printf("  ours (%s=%s) : %.5f ms   (%.2fx vs cuSPARSE)%s\n",
+               zsmode.c_str(),ours_kern,ours_ms,spd(csp_ms,ours_ms), auto_zs?"":"  [D=1 or 0-zeros -> dense]");
         printf("  cuSPARSE CSR ALG2 : %.5f ms\n",csp_ms);
         printf("  [verify] TC relerr=%.2e  zeroskip_err=%.2e  cusparse_err=%.2e  eff_bw=%.1f GB/s\n",
                (ynorm>0?tc_relerr/ynorm:-1.f),zs_err,csp_err,eff_bw);
     } else {
-        // CSV: file,n,D,fill,nnz,zsv,tc_ms,dense_ms,zs_ms,csp_ms,zs_vs_tc,zs_vs_dense,zs_vs_csp,tc_relerr,eff_bw,skip
-        printf("CSV,%s,%d,%d,%.3f,%lld,%s,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.3e,%.2f,%s\n",
+        // CSV: file,n,D,fill,nnz,zsv,tc_ms,dense_ms,zs_ms,csp_ms,zs_vs_tc,zs_vs_dense,zs_vs_csp,tc_relerr,eff_bw,skip,ours_kernel,ours_ms,ours_vs_csp
+        printf("CSV,%s,%d,%d,%.3f,%lld,%s,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.3e,%.2f,%s,%s,%.6f,%.4f\n",
                argv[1],n,D,fill,(long long)nnz,zsv,tc_ms,dense_ms,zs_ms,csp_ms,
                spd(tc_ms,zs_ms),spd(dense_ms,zs_ms),spd(csp_ms,zs_ms),
-               (ynorm>0?tc_relerr/ynorm:-1.f),eff_bw,skip_reason);
+               (ynorm>0?tc_relerr/ynorm:-1.f),eff_bw,skip_reason,
+               ours_kern,ours_ms,spd(csp_ms,ours_ms));
     }
     CK(cudaFree(dx)); CK(cudaFree(dy)); CK(cudaFree(dOff));
     return 0;
