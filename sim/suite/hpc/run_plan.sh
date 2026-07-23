@@ -71,7 +71,18 @@ echo "== P1.5 ablations -> $OUT/{tc,spmspm}_ablation.csv =="
 ABL_BIN=$BIN OUT=$OUT ARCH=$ARCH DIA=$DIA MATS_TC="$MATS" MATS_SP="$MATS_SP" bash $REPO/sim/suite/hpc/run_ablation.sh >/dev/null 2>&1 \
   && echo "  ablations OK" || echo "  ablations FAIL"
 
+# ---------- 6.7 end-to-end speedup + correctness anchor ----------
+echo "== 6.7 e2e + anchor -> $OUT/{e2e_speedup,qutip_anchor}.csv =="
+OUT=$OUT ARCH=$ARCH DIA=$DIA MATS="$MATS" bash $REPO/sim/suite/hpc/run_e2e.sh >/dev/null 2>&1 \
+  && echo "  e2e OK" || echo "  e2e FAIL"
+
+# ---------- 6.8 structure-aware sparsification ----------
+echo "== 6.8 sparsification -> $OUT/{spmv_trim,evolve_trim,evolve_budget,spmspm_trim}.csv =="
+OUT=$OUT ARCH=$ARCH DIA=$DIA bash $REPO/sim/suite/hpc/run_sparsity.sh >/dev/null 2>&1 \
+  && echo "  sparsity OK" || echo "  sparsity FAIL"
+
 echo "== DONE. results in $OUT: =="
-for f in spmv_kernel spmspm_kernel budget_sweep tc_ablation spmspm_ablation; do
+for f in spmv_kernel spmspm_kernel budget_sweep tc_ablation spmspm_ablation \
+         e2e_speedup qutip_anchor spmv_trim evolve_trim evolve_budget spmspm_trim; do
   [ -f $OUT/$f.csv ] && echo "  $f.csv ($(( $(wc -l < $OUT/$f.csv) - 1 )) rows)"
 done

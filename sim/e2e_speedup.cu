@@ -18,10 +18,12 @@
  * ============================================================ */
 #include "dia_io.hpp"
 #include "../spmv/src/dia_reconstruct.cuh"
+#include "../spmv/src/spmv_zeroskip_kernels.cuh"   // CUDA-core zero-skip (the production kernel)
 #include <cusparse.h>
 #include <cuda_runtime.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <complex>
 #include <vector>
@@ -45,11 +47,17 @@ int main(int argc,char**argv){
   const double dt=final_time/num_steps;
   DiaHost H=load_dia(path); const int n=H.n;
   if(K<0){ K=6; }
-  CsrHost csr=dia_to_csr(H);
+  // OOM-sweep isolation: MODE=ours runs only our TF32 kernels, MODE=cusp only
+  // the cuSPARSE baseline, so each side's memory ceiling is measured in its own
+  // process (a baseline OOM can't mask our kernel's true ceiling). Default=both.
+  const char* MODE=getenv("MODE");
+  const bool do_ours=!(MODE&&!strcmp(MODE,"cusp"));
+  const bool do_cusp=!(MODE&&!strcmp(MODE,"ours"));
+  CsrHost csr; if(do_cusp) csr=dia_to_csr(H);   // host CSR is huge at high q — skip when ours-only
 
-  std::printf("=== end-to-end speedup: ours(TF32) vs cuSPARSE(fp32) ===\n");
+  std::printf("=== end-to-end speedup: ours(TF32) vs cuSPARSE(fp32) === MODE=%s\n",MODE?MODE:"both");
   std::printf("file: %s\nn=%d diags=%zu nnz=%lld K=%d steps=%d\n",
-              path,n,H.offsets.size(),(long long)csr.nnz,K,num_steps);
+              path,n,H.offsets.size(),(long long)H.nnz,K,num_steps);
 
   std::vector<std::complex<double>> ck(K+1); ck[0]=1.0; std::complex<double> X(0.0,-dt);
   for(int k=1;k<=K;++k) ck[k]=ck[k-1]*X/(double)k;
@@ -66,40 +74,77 @@ int main(int argc,char**argv){
   auto reset=[&](){ CUDA_CHECK(cudaMemcpy(pr,psr.data(),n*sizeof(float),cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(pi,psi.data(),n*sizeof(float),cudaMemcpyHostToDevice)); };
 
-  // ---- cuSPARSE fp32 setup ----
+  // ---- cuSPARSE fp32 setup (skipped when MODE=ours) ----
   // 64-bit CSR indices: at q>=20 with wide fill the cumulative nnz exceeds
   // INT32_MAX (BH q24 nnz=2.48e9, O2 q20 nnz=2.89e9), which a 32I CSR cannot
   // represent. cuSPARSE forbids mixing 64I row offsets with 32I col indices, so
   // both are 64I (col values themselves are < n, but the type must match).
-  std::vector<int64_t> ci64(csr.col_idx.begin(), csr.col_idx.end());
-  int64_t *d_rp,*d_ci; float* d_v;
-  CUDA_CHECK(cudaMalloc(&d_rp,(n+1)*sizeof(int64_t))); CUDA_CHECK(cudaMalloc(&d_ci,csr.nnz*sizeof(int64_t)));
-  CUDA_CHECK(cudaMalloc(&d_v,csr.nnz*sizeof(float)));
-  CUDA_CHECK(cudaMemcpy(d_rp,csr.row_ptr64.data(),(n+1)*sizeof(int64_t),cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(d_ci,ci64.data(),csr.nnz*sizeof(int64_t),cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(d_v,csr.vals.data(),csr.nnz*sizeof(float),cudaMemcpyHostToDevice));
-  cusparseHandle_t h; CUSPARSE_CHECK(cusparseCreate(&h));
-  cusparseSpMatDescr_t mH; CUSPARSE_CHECK(cusparseCreateCsr(&mH,n,n,csr.nnz,d_rp,d_ci,d_v,
-    CUSPARSE_INDEX_64I,CUSPARSE_INDEX_64I,CUSPARSE_INDEX_BASE_ZERO,CUDA_R_32F));
-  cusparseDnVecDescr_t vIn,vOut; CUSPARSE_CHECK(cusparseCreateDnVec(&vIn,n,wr,CUDA_R_32F));
-  CUSPARSE_CHECK(cusparseCreateDnVec(&vOut,n,tr,CUDA_R_32F));
-  const float a1=1.f,b0=0.f; size_t bsz=0;
-  CUSPARSE_CHECK(cusparseSpMV_bufferSize(h,CUSPARSE_OPERATION_NON_TRANSPOSE,&a1,mH,vIn,&b0,vOut,
-    CUDA_R_32F,CUSPARSE_SPMV_CSR_ALG2,&bsz)); void* dbuf=nullptr; if(bsz) CUDA_CHECK(cudaMalloc(&dbuf,bsz));
+  int64_t *d_rp=nullptr,*d_ci=nullptr; float* d_v=nullptr;
+  cusparseHandle_t h=nullptr; cusparseSpMatDescr_t mH=nullptr;
+  cusparseDnVecDescr_t vIn=nullptr,vOut=nullptr; void* dbuf=nullptr;
+  const float a1=1.f,b0=0.f;
+  if(do_cusp){
+    std::vector<int64_t> ci64(csr.col_idx.begin(), csr.col_idx.end());
+    CUDA_CHECK(cudaMalloc(&d_rp,(n+1)*sizeof(int64_t))); CUDA_CHECK(cudaMalloc(&d_ci,csr.nnz*sizeof(int64_t)));
+    CUDA_CHECK(cudaMalloc(&d_v,csr.nnz*sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(d_rp,csr.row_ptr64.data(),(n+1)*sizeof(int64_t),cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_ci,ci64.data(),csr.nnz*sizeof(int64_t),cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_v,csr.vals.data(),csr.nnz*sizeof(float),cudaMemcpyHostToDevice));
+    CUSPARSE_CHECK(cusparseCreate(&h));
+    CUSPARSE_CHECK(cusparseCreateCsr(&mH,n,n,csr.nnz,d_rp,d_ci,d_v,
+      CUSPARSE_INDEX_64I,CUSPARSE_INDEX_64I,CUSPARSE_INDEX_BASE_ZERO,CUDA_R_32F));
+    CUSPARSE_CHECK(cusparseCreateDnVec(&vIn,n,wr,CUDA_R_32F));
+    CUSPARSE_CHECK(cusparseCreateDnVec(&vOut,n,tr,CUDA_R_32F));
+    size_t bsz=0;
+    CUSPARSE_CHECK(cusparseSpMV_bufferSize(h,CUSPARSE_OPERATION_NON_TRANSPOSE,&a1,mH,vIn,&b0,vOut,
+      CUDA_R_32F,CUSPARSE_SPMV_CSR_ALG2,&bsz)); if(bsz) CUDA_CHECK(cudaMalloc(&dbuf,bsz));
+  }
   auto spmv_cusp=[&](float* in,float* out){ CUSPARSE_CHECK(cusparseDnVecSetValues(vIn,in));
     CUSPARSE_CHECK(cusparseDnVecSetValues(vOut,out));
     CUSPARSE_CHECK(cusparseSpMV(h,CUSPARSE_OPERATION_NON_TRANSPOSE,&a1,mH,vIn,&b0,vOut,
       CUDA_R_32F,CUSPARSE_SPMV_CSR_ALG2,dbuf)); };
 
-  // ---- TF32 ours setup ----
-  DiaMatrix DM; DM.rows=n; DM.cols=n; DM.offsets=H.offsets; DM.diag_lengths=H.lengths; DM.values=H.values;
-  { std::vector<int> st(H.starts.size()); for(size_t i=0;i<H.starts.size();++i) st[i]=(int)H.starts[i]; DM.diag_starts=st; }
-  ReconMatrix R=build_recon(DM);
-  int* d_off; float* d_rv;
-  CUDA_CHECK(cudaMalloc(&d_off,R.num_diags*sizeof(int))); CUDA_CHECK(cudaMalloc(&d_rv,R.values.size()*sizeof(float)));
-  CUDA_CHECK(cudaMemcpy(d_off,R.diag_offsets.data(),R.num_diags*sizeof(int),cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy(d_rv,R.values.data(),R.values.size()*sizeof(float),cudaMemcpyHostToDevice));
-  ReconView RV{n,n,R.num_diags,d_off,d_rv};
+  // ---- TF32 ours setup (skipped when MODE=cusp) ----
+  int* d_off=nullptr; float* d_rv=nullptr; ReconView RV{n,n,0,nullptr,nullptr};
+  if(do_ours){
+    DiaMatrix DM; DM.rows=n; DM.cols=n; DM.offsets=H.offsets; DM.diag_lengths=H.lengths; DM.values=H.values;
+    { std::vector<int> st(H.starts.size()); for(size_t i=0;i<H.starts.size();++i) st[i]=(int)H.starts[i]; DM.diag_starts=st; }
+    ReconMatrix R=build_recon(DM);
+    CUDA_CHECK(cudaMalloc(&d_off,R.num_diags*sizeof(int))); CUDA_CHECK(cudaMalloc(&d_rv,R.values.size()*sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(d_off,R.diag_offsets.data(),R.num_diags*sizeof(int),cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_rv,R.values.data(),R.values.size()*sizeof(float),cudaMemcpyHostToDevice));
+    RV=ReconView{n,n,R.num_diags,d_off,d_rv};
+  }
+
+  // ---- CUDA-core zero-skip ours (the PRODUCTION kernel; headline vs cuSPARSE) ----
+  int64_t* d_zrp=nullptr; unsigned char* d_zd8=nullptr; unsigned short* d_zd16=nullptr;
+  float* d_zcv=nullptr; int* d_zoff=nullptr; int zD=0; bool z_u16=false; int64_t z_nnz=0;
+  if(do_ours){
+    std::vector<int> offd(H.offsets); std::sort(offd.begin(),offd.end(),std::greater<int>());
+    zD=(int)offd.size(); z_u16=zD>256;
+    std::vector<int> idxOf(2*(size_t)n,-1); for(int k=0;k<zD;++k) idxOf[offd[k]+n]=k;
+    std::vector<int64_t> zrp(n+1,0);
+    for(size_t i=0;i<H.offsets.size();++i){ int off=H.offsets[i],len=H.lengths[i]; size_t base=H.starts[i];
+      for(int j=0;j<len;++j){ if(H.values[base+j]==0.f) continue; int r=(off>=0)?j:j-off; zrp[r+1]++; } }
+    for(int r=0;r<n;++r) zrp[r+1]+=zrp[r];
+    z_nnz=zrp[n];
+    std::vector<unsigned char> zd8; std::vector<unsigned short> zd16;
+    if(z_u16) zd16.resize(z_nnz); else zd8.resize(z_nnz);
+    std::vector<float> zcv(z_nnz);
+    std::vector<int64_t> cur(zrp.begin(),zrp.end()-1);
+    for(size_t i=0;i<H.offsets.size();++i){ int off=H.offsets[i],len=H.lengths[i]; size_t base=H.starts[i]; int k=idxOf[off+n];
+      for(int j=0;j<len;++j){ float v=H.values[base+j]; if(v==0.f) continue; int r=(off>=0)?j:j-off; int64_t p=cur[r]++;
+        if(z_u16) zd16[p]=(unsigned short)k; else zd8[p]=(unsigned char)k; zcv[p]=v; } }
+    CUDA_CHECK(cudaMalloc(&d_zrp,(size_t)(n+1)*8)); CUDA_CHECK(cudaMemcpy(d_zrp,zrp.data(),(size_t)(n+1)*8,cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&d_zcv,(size_t)z_nnz*4)); CUDA_CHECK(cudaMemcpy(d_zcv,zcv.data(),(size_t)z_nnz*4,cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&d_zoff,zD*4)); CUDA_CHECK(cudaMemcpy(d_zoff,offd.data(),zD*4,cudaMemcpyHostToDevice));
+    if(z_u16){ CUDA_CHECK(cudaMalloc(&d_zd16,(size_t)z_nnz*2)); CUDA_CHECK(cudaMemcpy(d_zd16,zd16.data(),(size_t)z_nnz*2,cudaMemcpyHostToDevice)); }
+    else     { CUDA_CHECK(cudaMalloc(&d_zd8 ,(size_t)z_nnz  )); CUDA_CHECK(cudaMemcpy(d_zd8 ,zd8.data() ,(size_t)z_nnz  ,cudaMemcpyHostToDevice)); }
+  }
+  const int z_shb=zD*(int)sizeof(int);
+  auto zs=[&](float* in,float* out){
+    if(z_u16) spmv_dia_zeroskip_u16_i64<<<BLK,TPB,z_shb>>>((long long)n,zD,(const long long*)d_zrp,d_zd16,d_zcv,d_zoff,in,out);
+    else      spmv_dia_zeroskip_i64    <<<BLK,TPB,z_shb>>>((long long)n,zD,(const long long*)d_zrp,d_zd8 ,d_zcv,d_zoff,in,out); };
 
   // one evolution step parameterized by the SpMV implementation
   auto step=[&](auto spmv){
@@ -139,7 +184,6 @@ int main(int argc,char**argv){
     CUDA_CHECK(cudaEventRecord(e1)); CUDA_CHECK(cudaEventSynchronize(e1));
     float ms=0; CUDA_CHECK(cudaEventElapsedTime(&ms,e0,e1)); return (double)ms; };
 
-  double full_tf=time_full(tf32), full_cs=time_full(spmv_cusp);
   // fused real+imag path (one recon read per apply)
   auto time_full_fused=[&](){ reset();
     for(int i=0;i<5;++i) step_fused();
@@ -148,18 +192,31 @@ int main(int argc,char**argv){
     for(int st=0;st<num_steps;++st) step_fused();
     CUDA_CHECK(cudaEventRecord(e1)); CUDA_CHECK(cudaEventSynchronize(e1));
     float ms=0; CUDA_CHECK(cudaEventElapsedTime(&ms,e0,e1)); return (double)ms; };
-  double full_tf_fused=time_full_fused();
   long calls=(long)num_steps*2*K;
-  double sp_tf=time_spmv(tf32,calls), sp_cs=time_spmv(spmv_cusp,calls);
+  double full_zs=0,full_tf=0,full_cs=0,full_tf_fused=0,sp_zs=0,sp_tf=0,sp_cs=0;
+  if(do_ours){ full_zs=time_full(zs); full_tf=time_full(tf32); full_tf_fused=time_full_fused();
+               sp_zs=time_spmv(zs,calls); sp_tf=time_spmv(tf32,calls); }
+  if(do_cusp){ full_cs=time_full(spmv_cusp); sp_cs=time_spmv(spmv_cusp,calls); }
 
   std::printf("\n--- full %d-step evolution (device, ms) ---\n",num_steps);
-  std::printf("  ours (TF32)       : %9.3f ms\n",full_tf);
-  std::printf("  ours (TF32 fused) : %9.3f ms   (%.2fx vs separate)\n",full_tf_fused,full_tf/full_tf_fused);
-  std::printf("  cuSPARSE          : %9.3f ms\n",full_cs);
-  std::printf("  SPEEDUP full       = %.2fx (separate),  %.2fx (fused)\n",full_cs/full_tf,full_cs/full_tf_fused);
+  if(do_ours){
+    std::printf("  ours (CUDA zero-skip) : %9.3f ms   <-- production kernel\n",full_zs);
+    std::printf("  ours (TF32 tensor)    : %9.3f ms   (TC reference; loses)\n",full_tf);
+    std::printf("  ours (TF32 fused)     : %9.3f ms   (%.2fx vs separate)\n",full_tf_fused,full_tf/full_tf_fused);
+  }
+  if(do_cusp) std::printf("  cuSPARSE              : %9.3f ms\n",full_cs);
+  if(do_ours&&do_cusp)
+    std::printf("  SPEEDUP full: zero-skip=%.2fx,  TF32=%.2fx  (vs cuSPARSE)\n",full_cs/full_zs,full_cs/full_tf);
   std::printf("--- SpMV-only (%ld calls) ---\n",calls);
-  std::printf("  ours (TF32) : %9.3f ms  (%.5f ms/call)\n",sp_tf,sp_tf/calls);
-  std::printf("  cuSPARSE    : %9.3f ms  (%.5f ms/call)\n",sp_cs,sp_cs/calls);
-  std::printf("  SPEEDUP SpMV = %.2fx\n",sp_cs/sp_tf);
-  cusparseDestroy(h); return 0;
+  if(do_ours) std::printf("  ours (zero-skip): %9.3f ms  (%.5f ms/call)\n",sp_zs,sp_zs/calls);
+  if(do_ours) std::printf("  ours (TF32)     : %9.3f ms  (%.5f ms/call)\n",sp_tf,sp_tf/calls);
+  if(do_cusp) std::printf("  cuSPARSE        : %9.3f ms  (%.5f ms/call)\n",sp_cs,sp_cs/calls);
+  if(do_ours&&do_cusp) std::printf("  SPEEDUP SpMV: zero-skip=%.2fx,  TF32=%.2fx\n",sp_cs/sp_zs,sp_cs/sp_tf);
+  // CSV: file,n,zD,nnz,steps,K,zs_full,tf_full,cusp_full,zs_vs_cusp,tf_vs_cusp,zs_spmv,cusp_spmv
+  std::printf("E2E,%s,%d,%d,%lld,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.5f,%.5f\n",
+    path,n,zD,(long long)z_nnz,num_steps,K,full_zs,full_tf,full_cs,
+    (full_zs>0?full_cs/full_zs:-1),(full_tf>0?full_cs/full_tf:-1),
+    (calls?sp_zs/calls:0),(calls?sp_cs/calls:0));
+  std::printf("OOM_OK MODE=%s q_n=%d\n",MODE?MODE:"both",n);   // sentinel: reaching here = no OOM
+  if(h) cusparseDestroy(h); return 0;
 }
