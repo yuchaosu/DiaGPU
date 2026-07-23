@@ -56,6 +56,10 @@ echo "== wrote $OUT/meta.txt =="
 echo; echo "===== PHASE A: kernels + ablations + e2e + sparsification (run_plan.sh) ====="
 bash $HPC/run_plan.sh || echo "  (run_plan.sh reported a non-zero exit; continuing)"
 
+# ---- kernels under the fidelity-preserving diagonal budget (SpMV + SpMSpM) ----
+echo; echo "===== PHASE A2: kernels under fidelity->=0.99 diagonal budget (run_budget.sh) ====="
+bash $HPC/run_budget.sh || echo "  (run_budget.sh non-zero exit; continuing)"
+
 # ---- 6.4 ncu mechanism profiling (gated by NCU=1; run_ncu also self-skips if absent) ----
 echo; echo "===== PHASE B: ncu mechanism profiling (run_ncu.sh) ====="
 if [ "$NCU" = 1 ]; then
@@ -68,7 +72,8 @@ fi
 echo; echo "############################################################"
 echo "#  DONE — all evaluation CSVs in $OUT:"
 for f in spmv_kernel spmspm_kernel budget_sweep tc_ablation spmspm_ablation \
-         e2e_speedup qutip_anchor spmv_trim evolve_trim evolve_budget spmspm_trim ncu_profile; do
+         e2e_speedup qutip_anchor spmv_trim evolve_trim evolve_budget spmspm_trim \
+         budget_summary spmv_budget spmspm_budget ncu_profile; do
   [ -f $OUT/$f.csv ] && printf "#    %-22s %s rows\n" "$f.csv" "$(( $(wc -l < $OUT/$f.csv) - 1 ))"
 done
 echo "#  provenance: $OUT/meta.txt"
