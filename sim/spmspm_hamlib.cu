@@ -110,20 +110,23 @@ int main(int argc,char**argv){
     CUDA_CHECK(cudaMalloc(&dCoff,C.offsets.size()*sizeof(int))); CUDA_CHECK(cudaMemcpy(dCoff,C.offsets.data(),C.offsets.size()*sizeof(int),cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc(&dClen,C.lengths.size()*sizeof(int))); CUDA_CHECK(cudaMemcpy(dClen,C.lengths.data(),C.lengths.size()*sizeof(int),cudaMemcpyHostToDevice));
 
-    // ---- ours: gather_meta ----
-    constexpr int A_DMAX=128;  // smem pair list per C-diag <= #H diagonals (<=41 here)
+    // ---- ours: gather_meta (loads ALL A/B diagonals to smem -> hard-capped at
+    //      A_DMAX; skipped for wider H, where gather_flat's pair-tiling is the
+    //      path. meta stays as the narrow-band reference / L1 ablation point) ----
+    constexpr int A_DMAX=128;
     int Cn=C.offsets.size();
-    if(An>A_DMAX){fprintf(stderr,"A_ndiag %d > A_DMAX\n",An);return 1;}
-    const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn);
-    auto launch_meta=[&](){ gather_meta_kernel<A_DMAX><<<mgrid,mblk>>>(dHv,dHs,dHoff,dHlen,An, dHv,dHs,dHlen,dBlk, dCv,dCs,dCoff,dClen,Cn,n); };
-    CUDA_CHECK(cudaMemset(dCv,0,C.nnz*sizeof(float))); launch_meta(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
-    C_meta.resize(C.nnz); CUDA_CHECK(cudaMemcpy(C_meta.data(),dCv,C.nnz*sizeof(float),cudaMemcpyDeviceToHost));
-    t_meta=tms(launch_meta,5,iters);
+    if(An<=A_DMAX){
+      const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn);
+      auto launch_meta=[&](){ gather_meta_kernel<A_DMAX><<<mgrid,mblk>>>(dHv,dHs,dHoff,dHlen,An, dHv,dHs,dHlen,dBlk, dCv,dCs,dCoff,dClen,Cn,n); };
+      CUDA_CHECK(cudaMemset(dCv,0,C.nnz*sizeof(float))); launch_meta(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+      C_meta.resize(C.nnz); CUDA_CHECK(cudaMemcpy(C_meta.data(),dCv,C.nnz*sizeof(float),cudaMemcpyDeviceToHost));
+      t_meta=tms(launch_meta,5,iters);
+    }
 
-    // ---- ours (NEW best one-shot kernel): gather_flat (flatten + precomputed pairs) ----
-    // plan built ONCE (A=B=H), adaptive ILP (small n: many thin blocks; large n: amortize).
+    // ---- ours (best one-shot kernel): gather_flat. MAXP is now the pair-TILE
+    // size, NOT a cap: the kernel tiles the pair list into MAXP-sized chunks and
+    // accumulates across them, so ANY diagonal count works (no An>MAXP abort). ----
     constexpr int MAXP=FLAT_MAXP;
-    if(An>MAXP){fprintf(stderr,"A_ndiag %d > FLAT_MAXP %d — rebuild with -DFLAT_MAXP=%d\n",An,MAXP,An);return 1;}
     int FILP = (n>=65536)?4:1, TILE=256, POS=TILE*FILP;
     std::unordered_map<int,int> bIdxF; for(int i=0;i<An;++i) bIdxF[H.offsets[i]]=i;
     std::vector<int> pairPtr(Cn+1,0); std::vector<GPair> pairs; std::vector<int2> tiles;
@@ -199,20 +202,24 @@ int main(int argc,char**argv){
     // all verified exact vs CPU at small q) instead of recomputing on the CPU.
     // Verify only runs in default (both) mode where all three result buffers exist.
     if(do_ours&&do_hm){
+      bool meta_ran = (long long)C_meta.size()==(long long)C.nnz;   // skipped when An>A_DMAX
       if(n<=65536){
         std::vector<float> ref=cpu_ref(H,H,C);
-        printf("\n[verify] max|meta - cpu| = %.3e\n", maxdiff(C_meta,ref));
-        printf("[verify] max|flat - cpu| = %.3e   max|flat - meta| = %.3e\n", maxdiff(C_flat,ref), maxdiff(C_flat,C_meta));
+        if(meta_ran) printf("\n[verify] max|meta - cpu| = %.3e\n", maxdiff(C_meta,ref));
+        printf("[verify] max|flat - cpu| = %.3e%s\n", maxdiff(C_flat,ref),
+               meta_ran?"":"   (gather_meta skipped: An>A_DMAX)");
+        if(meta_ran) printf("[verify] max|flat - meta| = %.3e\n", maxdiff(C_flat,C_meta));
         printf("[verify] max|hm   - cpu| = %.3e\n", maxdiff(C_hm,ref));
       } else {
-        printf("\n[verify] CPU skipped (n=%d>65536); GPU cross-check: max|flat-meta| = %.3e\n",
-               n, maxdiff(C_flat,C_meta));
+        if(meta_ran) printf("\n[verify] CPU skipped (n=%d>65536); GPU cross-check: max|flat-meta| = %.3e\n", n, maxdiff(C_flat,C_meta));
+        else         printf("\n[verify] CPU skipped (n=%d>65536); meta skipped (An>A_DMAX); flat is the reference\n", n);
       }
     }
 
     // "ours" = gather_flat (the new best one-shot kernel); run_suite.sh parses "vs ours".
     printf("\n=== timings (ms, avg of %d; n=%d) ===\n",iters,n);
-    if(do_ours) printf("  ours (gather_flat) : %9.4f ms   (gather_meta was %.4f ms, flat %.2fx)\n",t_flat,t_meta,t_meta/t_flat);
+    if(do_ours){ if(t_meta>0) printf("  ours (gather_flat) : %9.4f ms   (gather_meta was %.4f ms, flat %.2fx)\n",t_flat,t_meta,t_meta/t_flat);
+                 else         printf("  ours (gather_flat) : %9.4f ms   (gather_meta skipped: An>A_DMAX)\n",t_flat); }
     if(do_hm){ if(do_ours) printf("  HM (atomicAdd)     : %9.4f ms   (%.2fx vs ours)\n",t_hm,t_hm/t_flat);
                else        printf("  HM (atomicAdd)     : %9.4f ms\n",t_hm); }
     if(do_cusp){ if(csp_ok){ if(do_ours) printf("  cuSPARSE SpGEMM    : %9.4f ms   (%.2fx vs ours)  [C nnz=%lld]\n",t_csp,t_csp/t_flat,(long long)Cnnz);
