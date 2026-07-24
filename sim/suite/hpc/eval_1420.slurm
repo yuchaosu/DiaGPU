@@ -32,10 +32,12 @@ heis_14_5 heis_16_5 heis_18_5 heis_20_5 heis_20_6 maxcut_14_5 maxcut_16_5 maxcut
 qmaxcut_14_4 qmaxcut_16_4 qmaxcut_18_4 qmaxcut_20_4 tfim_14_4 tfim_16_4 tfim_16_5 tfim_18_4 tfim_18_5 tfim_20_5 \
 tsp_15_4 tsp_18_4"
 
-# stage every matrix into one dir (dia_e2e or dia_oom)
-for m in $MATS; do s=$SRC/dia_e2e/$m.txt; [ -f "$s" ] || s=$SRC/dia_oom/$m.txt
+# small-q matrices for the QuTiP correctness anchor (run_e2e's default MATS_ANCHOR)
+MATS_ANCHOR="heis_8_4 tfim_8_4 fermi_8_4 qmaxcut_8_4"
+# stage every matrix + the anchor matrices into one dir (dia_e2e or dia_oom)
+for m in $MATS $MATS_ANCHOR; do s=$SRC/dia_e2e/$m.txt; [ -f "$s" ] || s=$SRC/dia_oom/$m.txt
   [ -f "$s" ] && ln -sf "$(readlink -f "$s")" "$DIA/$m.txt" || echo "  WARN missing $m"; done
-echo "staged $(ls "$DIA"/*.txt 2>/dev/null | wc -l)/34 matrices into $DIA"
+echo "staged $(ls "$DIA"/*.txt 2>/dev/null | wc -l) matrices (34 sweep + anchor) into $DIA"
 
 export REPO
 DIA="$DIA" OUT="$OUT" ARCH=sm_80 STEPS=200 K=6 KMAX=4 ITERS=100 FIDMIN=0.99 NCU=1 \
