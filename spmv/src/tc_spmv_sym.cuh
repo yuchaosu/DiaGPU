@@ -92,14 +92,25 @@ __global__ void sym_spmv_cuda(int n, int K, const int* __restrict__ off,
  * lower term from the dead off-diagonal lanes would halve the MMA count. Not
  * done here — this kernel establishes the correct half-operand baseline. */
 namespace symtc {
+// TF32 MMA is sm_80+. Stub the asm for pre-Ampere device passes so this header
+// COMPILES on sm_75 etc. (the TC kernel is never launched there — callers pick
+// the CUDA-core sym_spmv_cuda). Behaviour on sm_80+ is unchanged.
 __device__ __forceinline__ uint32_t to_tf32(float f){
-    uint32_t u; asm("cvt.rna.tf32.f32 %0, %1;" : "=r"(u) : "f"(f)); return u; }
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 800
+    uint32_t u; asm("cvt.rna.tf32.f32 %0, %1;" : "=r"(u) : "f"(f)); return u;
+#else
+    return __float_as_uint(f);
+#endif
+}
 __device__ __forceinline__ void mma(float* acc, const uint32_t* A, const uint32_t* B){
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 800
     asm volatile(
         "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
         "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
         : "+f"(acc[0]),"+f"(acc[1]),"+f"(acc[2]),"+f"(acc[3])
-        : "r"(A[0]),"r"(A[1]),"r"(A[2]),"r"(A[3]),"r"(B[0]),"r"(B[1])); }
+        : "r"(A[0]),"r"(A[1]),"r"(A[2]),"r"(A[3]),"r"(B[0]),"r"(B[1]));
+#endif
+}
 }
 
 __global__ void tc_spmv_sym_kernel(ReconView R, const float* x, int x_size, float* y)

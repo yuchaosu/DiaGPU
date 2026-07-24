@@ -168,6 +168,48 @@ __global__ void spmv_dia_zeroskip_u16_i64(long long rows, int D,
     y[r] = acc;
 }
 
+/* Fused real+imag: apply the SAME real H to xr AND xi in ONE pass, reading each
+ * stored (didx,val) once instead of twice across two separate SpMVs. Halves the
+ * matrix traffic of the complex apply used every evolution step (yr=H*xr, yi=H*xi). */
+__global__ void spmv_dia_zeroskip_i64_fused(long long rows, int D,
+    const long long* __restrict__ row_ptr,
+    const unsigned char* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ xr, const float* __restrict__ xi,
+    float* __restrict__ yr, float* __restrict__ yi)
+{
+    extern __shared__ int soff[];
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const long long b = row_ptr[r], e = row_ptr[r + 1];
+    float ar = 0.f, ai = 0.f;
+    for (long long j = b; j < e; ++j) { float v = val[j]; long long c = r + soff[didx[j]];
+        ar += v * xr[c]; ai += v * xi[c]; }
+    yr[r] = ar; yi[r] = ai;
+}
+__global__ void spmv_dia_zeroskip_u16_i64_fused(long long rows, int D,
+    const long long* __restrict__ row_ptr,
+    const unsigned short* __restrict__ didx,
+    const float* __restrict__ val,
+    const int*  __restrict__ offsets,
+    const float* __restrict__ xr, const float* __restrict__ xi,
+    float* __restrict__ yr, float* __restrict__ yi)
+{
+    extern __shared__ int soff[];
+    for (int k = threadIdx.x; k < D; k += blockDim.x) soff[k] = offsets[k];
+    __syncthreads();
+    const long long r = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= rows) return;
+    const long long b = row_ptr[r], e = row_ptr[r + 1];
+    float ar = 0.f, ai = 0.f;
+    for (long long j = b; j < e; ++j) { float v = val[j]; long long c = r + soff[didx[j]];
+        ar += v * xr[c]; ai += v * xi[c]; }
+    yr[r] = ar; yi[r] = ai;
+}
+
 /* Balanced (warp-per-row) DIA-native variant — for matrices whose per-row nnz
  * is skewed. On a fixed narrow band per-row nnz is bounded, so scalar usually
  * wins; kept for the wide/fill-in case. */

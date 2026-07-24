@@ -19,6 +19,7 @@ echo "node=$(hostname) gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader|h
 
 echo "== build ablation harnesses =="
 nvcc -O3 -std=c++17 -arch=$ARCH $REPO/sim/spmv_tc_ablation.cu $REPO/spmv/src/tc_spmv_regdirect_kernel.cu -o $BIN/spmv_tc_ablation                    || { echo BUILD_FAIL tc;   exit 1; }
+nvcc -O3 -std=c++17 -arch=$ARCH $REPO/sim/spmv_ablation.cu                                               -o $BIN/spmv_ablation                       || { echo BUILD_FAIL spmv; exit 1; }
 nvcc -O3 -std=c++17 -arch=$ARCH $REPO/sim/spmspm_ablation.cu  $REPO/spmspm/paper_hm_kernel.cu            -o $BIN/spmspm_ablation -Xcompiler -fopenmp || { echo BUILD_FAIL sp;   exit 1; }
 echo "  builds OK"
 
@@ -30,6 +31,13 @@ echo "== TC ablation -> $OUT/tc_ablation.csv =="
 echo "file,n,D,Dsym,kept_ztile,kept_symztile,t0_full,t1_sym,t2_ztile,t3_both,s1_sym,s2_ztile,s3_both,relerr" > $OUT/tc_ablation.csv
 for m in $MATS_TC; do p=$DIA/$m.txt; [ -f "$p" ] || { echo "  skip $m (missing)"; continue; }
   $BIN/spmv_tc_ablation "$p" $ITERS_TC --csv 2>/dev/null | grep '^TCABL,' | sed 's#^TCABL,[^,]*/#TCABL,#; s/^TCABL,//' >> $OUT/tc_ablation.csv \
+    && echo "  ok $m" || echo "  FAIL $m"
+done
+
+echo "== SpMV CUDA-core ablation (complex apply) -> $OUT/spmv_ablation.csv =="
+echo "file,n,D,Dsym,nnz,s0_dense,s1_zeroskip,s2_symmetric,s3_fused,s1_vs_s0,s2_vs_s0,s3_vs_s0,relerr" > $OUT/spmv_ablation.csv
+for m in $MATS_TC; do p=$DIA/$m.txt; [ -f "$p" ] || { echo "  skip $m (missing)"; continue; }
+  $BIN/spmv_ablation "$p" $ITERS_TC --csv 2>/dev/null | grep '^SPVABL,' | sed 's#^SPVABL,[^,]*/#SPVABL,#; s/^SPVABL,//' >> $OUT/spmv_ablation.csv \
     && echo "  ok $m" || echo "  FAIL $m"
 done
 
