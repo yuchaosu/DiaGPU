@@ -28,7 +28,15 @@ for m in $MATS; do
   echo "== $m =="
   ./spmv_driver   "$f" "$ITERS"   | tee -a "$OUT"
   ./spmspm_driver "$f" "$SPITERS" | tee -a "$OUT"
-  if [ -n "$DRAWLOOM_BIN" ] && [ -x "$DRAWLOOM_BIN" ] && [ -x "$D2MTX" ]; then
+  # e2e: Taylor evolution (hybrid SpMV, fused NV=2, vs cuSPARSE same
+  # pipeline) + operator chain H^2/H^3 (pair-plan SpMSpM).  E2E=0 skips.
+  if [ "${E2E:-1}" = "1" ] && [ -x ./e2e_driver ]; then
+    ./e2e_driver "$f" "${ESTEPS:-1000}" "${EK:-6}" | tee -a "$OUT"
+  fi
+  # Drawloom consumes a TEXT .mtx: skip when the source .txt is huge (the
+  # conversion alone would dominate the job; matches the old 1.5e8-nnz cap).
+  if [ -n "$DRAWLOOM_BIN" ] && [ -x "$DRAWLOOM_BIN" ] && [ -x "$D2MTX" ] \
+     && [ "$(stat -c%s "$f")" -le 800000000 ]; then
     mtx="$TMP/cur_$m.mtx"
     if "$D2MTX" "$f" "$mtx" >/dev/null 2>&1 && [ -f "$mtx" ]; then
       out=$(OMP_NUM_THREADS=16 "$DRAWLOOM_BIN" -filename "$mtx" 2>&1)

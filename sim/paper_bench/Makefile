@@ -3,7 +3,11 @@ ARCH ?= sm_89
 NVCC ?= nvcc
 FLAGS = -O3 -arch=$(ARCH) --std=c++17 --expt-relaxed-constexpr
 
-all: spmv_driver spmspm_driver
+all: spmv_driver spmspm_driver e2e_driver
+
+e2e_driver: e2e_driver.cu common.cuh gather_opt.cuh ../dia_io.hpp \
+            ../../spmv/src/spmv_gather.cuh ../../spmspm/gather_flat.cuh
+	$(NVCC) $(FLAGS) -o $@ $< -lcusparse
 
 spmv_driver: spmv_driver.cu common.cuh ../dia_io.hpp \
              ../../spmv/src/cuda_dia_kernels.cuh ../../spmv/src/spmv_gather.cuh

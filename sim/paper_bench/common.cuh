@@ -78,27 +78,36 @@ struct DidxPlan {
     bool wide = false;
 };
 
+/* two-pass build: count per-row nonzeros, prefix-sum, then scatter into the
+ * final arrays — no per-row vectors, O(stored) with tight constants (the
+ * plan-build time is part of the paper's amortization table).  Within a row,
+ * entries land in ascending diagonal order because the outer loop is over
+ * diagonals and the per-row cursor advances monotonically. */
 inline DidxPlan build_didx_plan(
     int n, const std::vector<int>& offsets, const std::vector<size_t>& starts,
     const std::vector<int>& lengths, const std::vector<float>& values)
 {
     DidxPlan P; P.wide = offsets.size() > 256;
-    std::vector<std::vector<std::pair<int,float>>> rows(n);
+    P.rp.assign(n + 1, 0);
+    for (size_t k = 0; k < offsets.size(); ++k) {
+        int off = offsets[k]; size_t s = starts[k]; int len = lengths[k];
+        for (int p = 0; p < len; ++p)
+            if (values[s + p] != 0.f) ++P.rp[(off >= 0 ? p : p - off) + 1];
+    }
+    for (int r = 0; r < n; ++r) P.rp[r+1] += P.rp[r];
+    size_t nnz = P.rp[n];
+    P.val.resize(nnz);
+    if (P.wide) P.d16.resize(nnz); else P.d8.resize(nnz);
+    std::vector<int> cur(P.rp.begin(), P.rp.end() - 1);
     for (size_t k = 0; k < offsets.size(); ++k) {
         int off = offsets[k]; size_t s = starts[k]; int len = lengths[k];
         for (int p = 0; p < len; ++p) {
             float v = values[s + p]; if (v == 0.f) continue;
-            int row = off >= 0 ? p : p - off;
-            rows[row].push_back({(int)k, v});
-        }
-    }
-    P.rp.assign(n + 1, 0);
-    for (int r = 0; r < n; ++r) {
-        P.rp[r+1] = P.rp[r] + (int)rows[r].size();
-        for (auto& e : rows[r]) {
-            if (P.wide) P.d16.push_back((unsigned short)e.first);
-            else        P.d8.push_back((unsigned char)e.first);
-            P.val.push_back(e.second);
+            int r = off >= 0 ? p : p - off;
+            int j = cur[r]++;
+            P.val[j] = v;
+            if (P.wide) P.d16[j] = (unsigned short)k;
+            else        P.d8[j]  = (unsigned char)k;
         }
     }
     return P;

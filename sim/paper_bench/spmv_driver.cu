@@ -153,8 +153,14 @@ int main(int argc, char** argv){
         double reads = 0; for (auto& s : T.segs) reads += s.len;
         double rho  = reads / (double)H.nnz;
         double fill = (double)nnz_true / (double)H.nnz;
+        /* D-threshold 3072, bracketed by four measurements on two GPUs:
+         * work list wins at D=1243 (O2_16, A100, 4.0x) and D=2859 (vib_16,
+         * H100, 4.9x); streaming wins at D=3359 (O2_20, A100, 1.68x) and
+         * D=5367 (vib_18, H100, 1.27x).  Mechanism: the 4*D-byte smem
+         * offset table erodes the work list's occupancy as D grows; the
+         * exact crossover is hardware-dependent within (2859, 3359]. */
         const char* pick = (nd <= 4 || fill >= 0.8*rho) ? "stream"
-                         : (nd > 4096 ? "gopt" : "didx");
+                         : (nd > 3072 ? "gopt" : "didx");
         fprintf(stderr, "# auto pick=%s (D=%d fill=%.2f rho=%.2f)\n", pick, nd, fill, rho);
 
         if (!strcmp(pick, "stream")) {
