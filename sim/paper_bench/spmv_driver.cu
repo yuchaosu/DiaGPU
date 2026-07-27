@@ -96,13 +96,18 @@ int main(int argc, char** argv){
         cudaFree(drp); cudaFree(doff); cudaFree(dv);
     }
 
+    int SMS = 1; cudaDeviceGetAttribute(&SMS, cudaDevAttrMultiProcessorCount, 0);
+
     /* ---- ours: gather streaming plan (SpMSpM-unified layout) ---- */
     {
         float* dAv = dupload(H.values);
         auto plan = build_dense_plan(H.offsets, H.starts, H.lengths);
         DSeg* dS = dupload(plan);
         int nseg = (int)plan.size();
-        const int ILP = n >= 65536 ? 4 : 1;
+        /* ILP=4 only when the shrunken grid still fills the GPU (SM-count
+         * based, not n-based: the n>=65536 heuristic tuned on 34 SMs starved
+         * the H100 at n=65k-262k). */
+        const int ILP = (n / (TPB*4) >= 2*SMS) ? 4 : 1;
         int b1 = (n + TPB - 1)/TPB, b4 = (n + TPB*4 - 1)/(TPB*4);
         auto l1=[&](){ if (ILP==4) spmv_gather_kernel<128,4,1><<<b4,TPB>>>(dAv,dS,nseg,dX,n,dY);
                        else        spmv_gather_kernel<128,1,1><<<b1,TPB>>>(dAv,dS,nseg,dX,n,dY); };
@@ -137,6 +142,64 @@ int main(int argc, char** argv){
         fprintf(stderr, "# gopt plan: %zu segs, reads %.1f%% of stored band\n",
                 T.segs.size(), 100.0*reads/H.nnz);
         cudaFree(dAv);cudaFree(dS);cudaFree(dfp);cudaFree(dfi);cudaFree(dpp);cudaFree(dpi);
+    }
+
+    /* ---- ours_auto: the hybrid kernel — plan selected at build time from
+     * (D, fill, rho).  Thresholds from the H100 sweep: streaming when D<=4
+     * or fill >= 0.8*rho (byte-crossover law); gopt when D > 4096 (didx's
+     * smem offset table kills occupancy); didx otherwise. ---- */
+    {
+        TilePlan T = build_coarse_plan(H, TPB*4, 1024);
+        double reads = 0; for (auto& s : T.segs) reads += s.len;
+        double rho  = reads / (double)H.nnz;
+        double fill = (double)nnz_true / (double)H.nnz;
+        const char* pick = (nd <= 4 || fill >= 0.8*rho) ? "stream"
+                         : (nd > 4096 ? "gopt" : "didx");
+        fprintf(stderr, "# auto pick=%s (D=%d fill=%.2f rho=%.2f)\n", pick, nd, fill, rho);
+
+        if (!strcmp(pick, "stream")) {
+            float* dAv = dupload(H.values);
+            auto plan = build_dense_plan(H.offsets, H.starts, H.lengths);
+            DSeg* dS = dupload(plan); int nseg = (int)plan.size();
+            const int ILP = (n / (TPB*4) >= 2*SMS) ? 4 : 1;
+            int b1 = (n + TPB - 1)/TPB, b4 = (n + TPB*4 - 1)/(TPB*4);
+            auto l1=[&](){ if (ILP==4) spmv_gather_kernel<128,4,1><<<b4,TPB>>>(dAv,dS,nseg,dX,n,dY);
+                           else        spmv_gather_kernel<128,1,1><<<b1,TPB>>>(dAv,dS,nseg,dX,n,dY); };
+            auto l2=[&](){ if (ILP==4) spmv_gather_kernel<128,4,2><<<b4,TPB>>>(dAv,dS,nseg,dX,n,dY);
+                           else        spmv_gather_kernel<128,1,2><<<b1,TPB>>>(dAv,dS,nseg,dX,n,dY); };
+            l1(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+            row("ours_auto_nv1", tms(l1,10,iters), check1());
+            l2(); CUDA_CHECK(cudaDeviceSynchronize());
+            row("ours_auto_nv2", tms(l2,10,iters), check2());
+            cudaFree(dAv); cudaFree(dS);
+        } else if (!strcmp(pick, "gopt")) {
+            float* dAv = dupload(T.packed); DSeg* dS = dupload(T.segs);
+            int *dfp=dupload(T.fullPtr), *dfi=dupload(T.fullIdx),
+                *dpp=dupload(T.partPtr), *dpi=dupload(T.partIdx);
+            auto l1=[&](){ spmv_tile_vec4_kernel<1><<<T.ntiles,TPB>>>(dAv,dS,dfp,dfi,dpp,dpi,dX,n,dY); };
+            auto l2=[&](){ spmv_tile_vec4_kernel<2><<<T.ntiles,TPB>>>(dAv,dS,dfp,dfi,dpp,dpi,dX,n,dY); };
+            l1(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+            row("ours_auto_nv1", tms(l1,10,iters), check1());
+            l2(); CUDA_CHECK(cudaDeviceSynchronize());
+            row("ours_auto_nv2", tms(l2,10,iters), check2());
+            cudaFree(dAv);cudaFree(dS);cudaFree(dfp);cudaFree(dfi);cudaFree(dpp);cudaFree(dpi);
+        } else {
+            DidxPlan P = build_didx_plan(n, H.offsets, H.starts, H.lengths, H.values);
+            int *drp = dupload(P.rp), *doff = dupload(std::vector<int>(H.offsets));
+            float *dv = dupload(P.val);
+            int blocks = (n + TPB - 1)/TPB; size_t smem = (size_t)nd * 4;
+            auto go=[&](auto* dx){
+                auto l1=[&](){ spmv_didx_kernel<std::remove_pointer_t<decltype(dx)>,1><<<blocks,TPB,smem>>>(n,nd,drp,dx,dv,doff,dX,dY); };
+                auto l2=[&](){ spmv_didx_kernel<std::remove_pointer_t<decltype(dx)>,2><<<blocks,TPB,smem>>>(n,nd,drp,dx,dv,doff,dX,dY); };
+                l1(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+                row("ours_auto_nv1", tms(l1,10,iters), check1());
+                l2(); CUDA_CHECK(cudaDeviceSynchronize());
+                row("ours_auto_nv2", tms(l2,10,iters), check2());
+            };
+            if (!P.wide){ unsigned char*  d8 = dupload(P.d8);  go(d8);  cudaFree(d8); }
+            else        { unsigned short* d16= dupload(P.d16); go(d16); cudaFree(d16); }
+            cudaFree(drp); cudaFree(doff); cudaFree(dv);
+        }
     }
 
     /* ---- CSR scalar zero-skip (reference for the didx-vs-CSR delta) ---- */
