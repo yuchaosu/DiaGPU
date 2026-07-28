@@ -1,0 +1,20 @@
+# gopt plan: 10756 segs, reads 48.2% of stored band
+# auto pick=didx (D=1243 fill=0.07 rho=0.48)
+# gopt plan: 10756 segs, reads 48.2% of stored band
+# auto pick=didx (D=1243 fill=0.07 rho=0.48)
+# gopt plan: 282838 segs, reads 34.2% of stored band
+# auto pick=gopt (D=3359 fill=0.07 rho=0.34)
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE spmv_driver.cu:259 3
+# gopt plan: 282838 segs, reads 34.2% of stored band
+# auto pick=gopt (D=3359 fill=0.07 rho=0.34)
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE spmv_driver.cu:259 3
+# gopt plan: 83 segs, reads 79.2% of stored band
+# auto pick=didx (D=31 fill=0.50 rho=0.79)
+# gopt plan: 275 segs, reads 76.3% of stored band
+# auto pick=didx (D=35 fill=0.50 rho=0.76)
+# gopt plan: 1043 segs, reads 73.8% of stored band
+# auto pick=didx (D=39 fill=0.50 rho=0.74)

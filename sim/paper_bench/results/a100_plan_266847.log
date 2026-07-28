@@ -1,0 +1,144 @@
+# gopt plan: 71 segs, reads 82.4% of stored band
+# auto pick=didx (D=71 fill=0.13 rho=0.82)
+# gopt plan: 259 segs, reads 76.4% of stored band
+# auto pick=didx (D=210 fill=0.09 rho=0.76)
+# gopt plan: 1214 segs, reads 58.4% of stored band
+# auto pick=didx (D=389 fill=0.08 rho=0.58)
+# gopt plan: 47 segs, reads 77.1% of stored band
+# auto pick=didx (D=47 fill=0.16 rho=0.77)
+# gopt plan: 9026 segs, reads 63.7% of stored band
+# auto pick=didx (D=127 fill=0.21 rho=0.64)
+CUDA spmspm_driver.cu:116 out of memory
+# gopt plan: 145872 segs, reads 56.9% of stored band
+# auto pick=didx (D=155 fill=0.20 rho=0.57)
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2483027996) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE spmv_driver.cu:253 3
+CUDA spmspm_driver.cu:90 out of memory
+# gopt plan: 353 segs, reads 83.7% of stored band
+# auto pick=didx (D=299 fill=0.14 rho=0.84)
+# gopt plan: 353 segs, reads 83.7% of stored band
+# auto pick=didx (D=299 fill=0.14 rho=0.84)
+# gopt plan: 45 segs, reads 78.5% of stored band
+# auto pick=didx (D=45 fill=0.18 rho=0.79)
+# gopt plan: 10756 segs, reads 48.2% of stored band
+# auto pick=didx (D=1243 fill=0.07 rho=0.48)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 10756 segs, reads 48.2% of stored band
+# auto pick=didx (D=1243 fill=0.07 rho=0.48)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 282838 segs, reads 34.2% of stored band
+# auto pick=didx (D=3359 fill=0.07 rho=0.34)
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE spmv_driver.cu:253 3
+CUDA spmspm_driver.cu:90 out of memory
+# gopt plan: 282838 segs, reads 34.2% of stored band
+# auto pick=didx (D=3359 fill=0.07 rho=0.34)
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE spmv_driver.cu:253 3
+CUDA spmspm_driver.cu:90 out of memory
+# gopt plan: 17 segs, reads 87.9% of stored band
+# auto pick=didx (D=17 fill=0.31 rho=0.88)
+# gopt plan: 23 segs, reads 86.4% of stored band
+# auto pick=didx (D=21 fill=0.30 rho=0.86)
+# gopt plan: 47 segs, reads 78.5% of stored band
+# auto pick=didx (D=25 fill=0.29 rho=0.78)
+# gopt plan: 143 segs, reads 71.3% of stored band
+# auto pick=didx (D=29 fill=0.27 rho=0.71)
+# gopt plan: 13 segs, reads 84.6% of stored band
+# auto pick=didx (D=13 fill=0.30 rho=0.85)
+# gopt plan: 19 segs, reads 88.9% of stored band
+# auto pick=didx (D=19 fill=0.31 rho=0.89)
+# gopt plan: 25 segs, reads 87.5% of stored band
+# auto pick=didx (D=23 fill=0.30 rho=0.88)
+# gopt plan: 49 segs, reads 80.0% of stored band
+# auto pick=didx (D=27 fill=0.29 rho=0.80)
+# gopt plan: 145 segs, reads 73.2% of stored band
+# auto pick=didx (D=31 fill=0.28 rho=0.73)
+# gopt plan: 529 segs, reads 67.6% of stored band
+# auto pick=didx (D=35 fill=0.28 rho=0.68)
+# gopt plan: 2065 segs, reads 63.2% of stored band
+# auto pick=didx (D=39 fill=0.28 rho=0.63)
+CUDA spmspm_driver.cu:116 out of memory
+# gopt plan: 2065 segs, reads 63.2% of stored band
+# auto pick=didx (D=39 fill=0.28 rho=0.63)
+CUDA spmspm_driver.cu:116 out of memory
+# gopt plan: 8209 segs, reads 59.5% of stored band
+# auto pick=didx (D=43 fill=0.27 rho=0.60)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 8209 segs, reads 59.5% of stored band
+# auto pick=didx (D=43 fill=0.27 rho=0.60)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 32785 segs, reads 56.5% of stored band
+# auto pick=didx (D=47 fill=0.27 rho=0.57)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 32785 segs, reads 56.5% of stored band
+# auto pick=didx (D=47 fill=0.27 rho=0.57)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 15 segs, reads 85.8% of stored band
+# auto pick=didx (D=15 fill=0.32 rho=0.86)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=0.47 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=0.53 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
+# gopt plan: 183 segs, reads 75.4% of stored band
+# auto pick=stream (D=1 fill=0.57 rho=0.75)
+# gopt plan: 19 segs, reads 81.9% of stored band
+# auto pick=didx (D=19 fill=0.50 rho=0.82)
+# gopt plan: 23 segs, reads 84.6% of stored band
+# auto pick=didx (D=23 fill=0.50 rho=0.85)
+# gopt plan: 35 segs, reads 82.5% of stored band
+# auto pick=didx (D=27 fill=0.50 rho=0.83)
+# gopt plan: 83 segs, reads 79.2% of stored band
+# auto pick=didx (D=31 fill=0.50 rho=0.79)
+# gopt plan: 275 segs, reads 76.3% of stored band
+# auto pick=didx (D=35 fill=0.50 rho=0.76)
+# gopt plan: 1043 segs, reads 73.8% of stored band
+# auto pick=didx (D=39 fill=0.50 rho=0.74)
+# gopt plan: 21 segs, reads 100.0% of stored band
+# auto pick=didx (D=21 fill=0.58 rho=1.00)
+# gopt plan: 27 segs, reads 97.8% of stored band
+# auto pick=didx (D=25 fill=0.57 rho=0.98)
+# gopt plan: 51 segs, reads 92.1% of stored band
+# auto pick=didx (D=29 fill=0.56 rho=0.92)
+# gopt plan: 147 segs, reads 87.0% of stored band
+# auto pick=didx (D=33 fill=0.55 rho=0.87)
+# gopt plan: 147 segs, reads 87.0% of stored band
+# auto pick=didx (D=33 fill=0.55 rho=0.87)
+# gopt plan: 531 segs, reads 82.8% of stored band
+# auto pick=didx (D=37 fill=0.54 rho=0.83)
+# gopt plan: 531 segs, reads 82.8% of stored band
+# auto pick=didx (D=37 fill=0.54 rho=0.83)
+# gopt plan: 2067 segs, reads 79.5% of stored band
+# auto pick=didx (D=41 fill=0.54 rho=0.79)
+CUDA spmspm_driver.cu:116 out of memory
+# gopt plan: 8211 segs, reads 76.7% of stored band
+# auto pick=didx (D=45 fill=0.53 rho=0.77)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 32787 segs, reads 74.5% of stored band
+# auto pick=didx (D=49 fill=0.53 rho=0.74)
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+# gopt plan: 17 segs, reads 100.0% of stored band
+# auto pick=didx (D=17 fill=0.60 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
+# gopt plan: 1 segs, reads 100.0% of stored band
+# auto pick=stream (D=1 fill=1.00 rho=1.00)
