@@ -28,11 +28,15 @@
 #include "gather_opt.cuh"
 #include "common.cuh"
 #include "../../spmspm/gather_flat.cuh"
+#include "../../spmspm/gather_flat_sym.cuh"   // L4: symmetric upper-half operator-build
 
 #include <cusparse.h>
 #include <chrono>
 #include <unordered_map>
+#include <set>
 #include <cstring>
+#include <string>
+#include <functional>
 #include <cmath>
 
 #define CUSP_CHECK(x) do{cusparseStatus_t s=(x); if(s!=CUSPARSE_STATUS_SUCCESS){fprintf(stderr,"cuSPARSE %s:%d %d\n",__FILE__,__LINE__,(int)s);exit(1);}}while(0)
@@ -66,14 +70,45 @@ __global__ void cset_kernel(int n, float ar, float ai,
     u[n + i] = ar * vi + ai * vr;
 }
 
+/* operator-building accumulate (real fp32): U += c * P, P a REAL DIA operand.
+ * Each source diagonal k maps to U start s2u[k] (same offset, same full-diagonal
+ * length), so position p aligns directly.  blockIdx.y = diagonal. */
+__global__ void accum_scaled_kernel(int ndiag,
+        const int* __restrict__ s2u, const int* __restrict__ sstart,
+        const int* __restrict__ slen, const float* __restrict__ sval,
+        float c, float* __restrict__ U)
+{
+    int k = blockIdx.y; if (k >= ndiag) return;
+    int len = slen[k], base = sstart[k], u0 = s2u[k];
+    for (int p = blockIdx.x*blockDim.x + threadIdx.x; p < len; p += gridDim.x*blockDim.x)
+        U[u0 + p] += c * sval[base + p];
+}
+/* set a length-n array to 1.0 (the identity diagonal source for c_0 * I) */
+__global__ void ones_kernel(int n, float* p){ int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) p[i]=1.f; }
+
+/* Taylor order K from the workload filename convention <family>_<q>_<K>.txt
+ * (the adaptive, per-matrix convergence order baked in at data-gen time).
+ * Falls back to 6 if the trailing _<K> is absent. */
+static int k_from_name(const char* path){
+    const char* b = strrchr(path, '/'); b = b ? b+1 : path;
+    std::string s(b);
+    size_t dot = s.rfind(".txt"); if (dot != std::string::npos) s = s.substr(0, dot);
+    size_t us = s.rfind('_'); if (us == std::string::npos || us+1 >= s.size()) return 6;
+    int k = atoi(s.c_str()+us+1);
+    return (k >= 1 && k <= 64) ? k : 6;
+}
+
 int main(int argc, char** argv){
-    if (argc < 2){ fprintf(stderr, "usage: %s <dia_file> [steps=200] [K=6] [--no-op] [--no-cusparse]\n", argv[0]); return 1; }
-    int S = argc > 2 && argv[2][0] != '-' ? atoi(argv[2]) : 200;
-    int K = argc > 3 && argv[3][0] != '-' ? atoi(argv[3]) : 6;
-    bool do_op = true, do_cusp = true;
+    if (argc < 2){ fprintf(stderr, "usage: %s <dia_file> [steps=1000] [K=<from filename>] [--no-op] [--no-cusparse]\n", argv[0]); return 1; }
+    int S = argc > 2 && argv[2][0] != '-' ? atoi(argv[2]) : 1000;
+    /* K: explicit arg wins; else the per-matrix convergence order from the filename */
+    int K = argc > 3 && argv[3][0] != '-' ? atoi(argv[3]) : k_from_name(argv[1]);
+    bool do_op = true, do_cusp = true, do_opbuild = true, do_sym = false;
     for (int a = 2; a < argc; ++a){
         if (!strcmp(argv[a], "--no-op")) do_op = false;
         if (!strcmp(argv[a], "--no-cusparse")) do_cusp = false;
+        if (!strcmp(argv[a], "--no-opbuild")) do_opbuild = false;
+        if (!strcmp(argv[a], "--sym")) do_sym = true;   /* L4 upper-half operator-build (symmetric H only) */
     }
     DiaHost H = load_dia(argv[1]);
     const int n = H.n, nd = (int)H.offsets.size();
@@ -287,6 +322,192 @@ int main(int argc, char** argv){
         }
         if (dAvv != dHv) cudaFree(dAvv);
         cudaFree(dHv);
+    }
+
+    /* =================== (c-sym) operator-building — L4 SYMMETRIC (upper-half) ===================
+     * --sym: build U = sum w_k H^k storing U and every power P_k UPPER-half (offsets>=0) via
+     * gather_flat_sym. VALID ONLY for symmetric H (HamLib). SuiteSparse -> run WITHOUT --sym. */
+    if (do_opbuild && do_sym) {
+        auto mkc_up = [&](const std::vector<int>& ao, std::vector<int>& coff, std::vector<size_t>& cst, std::vector<int>& clen)->size_t{
+            std::vector<char> pres(2*(size_t)n-1,0);
+            for (int da:ao) for (int db:H.offsets){ int dc=da+db; if(dc>-n&&dc<n) pres[dc+n-1]=1; }
+            size_t o=0; coff.clear();cst.clear();clen.clear();
+            for (int d=0; d<=n-1; ++d){ if(!pres[d+n-1])continue; int l=n-d; coff.push_back(d); cst.push_back(o); clen.push_back(l); o+=l; }
+            return o;
+        };
+        std::set<int> uset; uset.insert(0);
+        { std::set<int> cur{0};
+          for (int k=1;k<=K;++k){ std::set<int> nx; for(int a:cur) for(int b:H.offsets){int d=a+b; if(d>-n&&d<n)nx.insert(d);} cur.swap(nx);
+            for(int d:cur) if(d>=0) uset.insert(d); } }
+        std::vector<int> Uo(uset.begin(),uset.end()); int Ud=(int)Uo.size();
+        std::unordered_map<int,int> uslot; std::vector<size_t> Ust(Ud); std::vector<int> Ulen(Ud);
+        size_t uo=0; for(int i=0;i<Ud;++i){ uslot[Uo[i]]=i; Ulen[i]=n-Uo[i]; Ust[i]=uo; uo+=Ulen[i]; }
+        const size_t Unnz=uo, CAP2=(size_t)6e8;
+        if (Unnz>CAP2){ printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,-1,-1,-1\n",file,n,K,Ud,Unnz); }
+        else {
+            std::vector<int> Hup_off,Hup_len; std::vector<size_t> Hup_st; std::vector<int> Babs(n,-1);
+            for (int i=0;i<nd;++i) if(H.offsets[i]>=0){ int a=H.offsets[i]; Babs[a]=(int)Hup_off.size(); Hup_off.push_back(a); Hup_len.push_back(H.lengths[i]); Hup_st.push_back(H.starts[i]); }
+            float* dHvals=dupload(H.values);
+            float* dU; CUDA_CHECK(cudaMalloc(&dU,Unnz*4));
+            std::vector<double> w(K+1); w[0]=1.0; for(int k=1;k<=K;++k) w[k]=w[k-1]*dt/k;
+            float* dOnes; CUDA_CHECK(cudaMalloc(&dOnes,(size_t)n*4)); ones_kernel<<<(n+TPB-1)/TPB,TPB>>>(n,dOnes);
+            auto accum=[&](int sd,int* dS2U,int* dSst,int* dSlen,float* sval,double c_,int maxl){
+                dim3 g((maxl+TPB-1)/TPB,sd); accum_scaled_kernel<<<g,TPB>>>(sd,dS2U,dSst,dSlen,sval,(float)c_,dU); };
+            cudaEvent_t e0,e1; cudaEventCreate(&e0); cudaEventCreate(&e1); cudaEventRecord(e0);
+            CUDA_CHECK(cudaMemset(dU,0,Unnz*4));
+            { std::vector<int> s2u{(int)Ust[uslot[0]]},sst{0},sln{n}; int* a=dupload(s2u);int* b=dupload(sst);int* c=dupload(sln);
+              accum(1,a,b,c,dOnes,w[0],n); cudaFree(a);cudaFree(b);cudaFree(c); }
+            { int hu=(int)Hup_off.size(); std::vector<int> s2u(hu),sst(hu); int ml=0;
+              for(int i=0;i<hu;++i){ s2u[i]=(int)Ust[uslot[Hup_off[i]]]; sst[i]=(int)Hup_st[i]; ml=std::max(ml,Hup_len[i]); }
+              int* a=dupload(s2u);int* b=dupload(sst);int* c=dupload(std::vector<int>(Hup_len));
+              accum(hu,a,b,c,dHvals,w[1],ml); cudaFree(a);cudaFree(b);cudaFree(c); }
+            std::vector<int> Aoff=Hup_off, Alen=Hup_len; std::vector<size_t> Ast=Hup_st; float* dAv=dHvals;
+            for (int k=2;k<=K;++k){
+                std::vector<int> Coff,Clen; std::vector<size_t> Cst; size_t Cnnz=mkc_up(Aoff,Coff,Cst,Clen); int Cn2=(int)Coff.size();
+                if (Cnnz>CAP2){ if(dAv!=dHvals)cudaFree(dAv); dAv=dHvals; break; }
+                FlatSymPlan spn=build_flat_sym_plan(n, Aoff,Alen,Ast, Hup_len,Hup_st, Babs, Coff,Clen, TPB*4);
+                float* dPk; CUDA_CHECK(cudaMalloc(&dPk,Cnnz*4)); CUDA_CHECK(cudaMemset(dPk,0,Cnnz*4));
+                size_t* dCst=dupload(Cst); int* dCl=dupload(std::vector<int>(Clen));
+                GPair* dP=dupload(spn.pairs); int* dPp=dupload(spn.pairPtr); int2* dT=dupload(spn.tiles);
+                gather_flat_sym_kernel<256,4><<<(int)spn.tiles.size(),256>>>(dAv,dHvals,dT,dPp,dP,dPk,dCst,dCl);
+                CUDA_CHECK(cudaGetLastError());
+                std::vector<int> c2u(Cn2),cst_i(Cn2); int ml=0;
+                for(int q=0;q<Cn2;++q){ c2u[q]=(int)Ust[uslot[Coff[q]]]; cst_i[q]=(int)Cst[q]; ml=std::max(ml,Clen[q]); }
+                int* dC2U=dupload(c2u); int* dCsti=dupload(cst_i);
+                accum(Cn2,dC2U,dCsti,dCl,dPk,w[k],ml);
+                cudaFree(dC2U);cudaFree(dCsti);cudaFree(dP);cudaFree(dPp);cudaFree(dT);cudaFree(dCst);cudaFree(dCl);
+                if(dAv!=dHvals)cudaFree(dAv); dAv=dPk; Aoff=Coff; Alen=Clen; Ast=Cst;
+            }
+            if(dAv!=dHvals)cudaFree(dAv);
+            CUDA_CHECK(cudaDeviceSynchronize()); float sym_ms=0; cudaEventRecord(e1); cudaEventSynchronize(e1); cudaEventElapsedTime(&sym_ms,e0,e1);
+            cudaEventDestroy(e0);cudaEventDestroy(e1);
+            /* E2EOPBUILDCSV,file,n,K,U_diags(upper),U_stored(upper),ours_sym_ms,-1,-1 */
+            printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,%.3f,-1,-1\n", file,n,K,Ud,Unnz,sym_ms);
+            cudaFree(dU);cudaFree(dOnes);cudaFree(dHvals);
+        }
+    }
+
+    /* =================== (c) operator-building Taylor: U = sum_{k=0}^{K} c_k H^k (FULL) ===================
+     * Default (no --sym): full-C build, ours(gather_flat) vs hamsim(diaq). Used for SuiteSparse /
+     * any general matrix. H real so each P_k real; only c_k = (-i dt)^k/k! are complex. */
+    if (do_opbuild && !do_sym) {
+        auto mkc2 = [&](const std::vector<int>& ao, std::vector<int>& coff,
+                        std::vector<size_t>& cst, std::vector<int>& clen)->size_t {
+            std::vector<char> pres(2*(size_t)n-1, 0);
+            for (int da : ao) for (int db : H.offsets){ int dc=da+db; if (dc>-n && dc<n) pres[dc+n-1]=1; }
+            size_t o=0; coff.clear(); cst.clear(); clen.clear();
+            for (int d=-(n-1); d<=n-1; ++d){ if(!pres[d+n-1]) continue; int l=n-std::abs(d);
+                coff.push_back(d); cst.push_back(o); clen.push_back(l); o+=l; }
+            return o;
+        };
+        std::set<int> uset; uset.insert(0);
+        { std::set<int> cur{0};
+          for (int k=1;k<=K;++k){ std::set<int> nx;
+            for (int a:cur) for (int b:H.offsets){ int d=a+b; if(d>-n && d<n) nx.insert(d); }
+            cur.swap(nx); for(int d:cur) uset.insert(d); } }
+        std::vector<int> Uo(uset.begin(), uset.end());
+        const int Ud=(int)Uo.size();
+        std::unordered_map<int,int> uslot;
+        std::vector<size_t> Ust(Ud); std::vector<int> Ulen(Ud);
+        size_t uo=0; for (int i=0;i<Ud;++i){ uslot[Uo[i]]=i; Ulen[i]=n-std::abs(Uo[i]); Ust[i]=uo; uo+=Ulen[i]; }
+        const size_t Unnz=uo, CAP2=(size_t)6e8;
+        if (Unnz > CAP2) {
+            printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,-1,-1,-1\n", file,n,K,Ud,Unnz);
+        } else {
+            std::unordered_map<int,int> hIdx; for (int i=0;i<nd;++i) hIdx[H.offsets[i]]=i;
+            float* dHvals = dupload(H.values);
+            float* dU; CUDA_CHECK(cudaMalloc(&dU,Unnz*4));
+            std::vector<double> w(K+1); w[0]=1.0; for (int k=1;k<=K;++k) w[k]=w[k-1]*dt/k;  /* |c_k| = dt^k/k! */
+            float* dOnes; CUDA_CHECK(cudaMalloc(&dOnes,(size_t)n*4)); ones_kernel<<<(n+TPB-1)/TPB,TPB>>>(n,dOnes);
+            std::vector<int> h2u(nd), hst_i(nd);
+            for (int i=0;i<nd;++i){ h2u[i]=(int)Ust[uslot[H.offsets[i]]]; hst_i[i]=(int)H.starts[i]; }
+            int* dHoffU=dupload(h2u); int* dHstart=dupload(hst_i); int* dHlen=dupload(std::vector<int>(H.lengths));
+            auto accum=[&](int sd,int* dS2U,int* dSst,int* dSlen,float* sval,double c_,int maxl){
+                dim3 g((maxl+TPB-1)/TPB, sd);
+                accum_scaled_kernel<<<g,TPB>>>(sd,dS2U,dSst,dSlen,sval,(float)c_,dU);
+            };
+            auto build=[&](bool hamsim, float* out_ms){
+                cudaEvent_t e0,e1; cudaEventCreate(&e0); cudaEventCreate(&e1); cudaEventRecord(e0);
+                CUDA_CHECK(cudaMemset(dU,0,Unnz*4));
+                /* w_0 * I  (offset-0 diagonal, source = ones) */
+                { std::vector<int> s2u{(int)Ust[uslot[0]]}, sst{0}, sln{n};
+                  int* a=dupload(s2u); int* b=dupload(sst); int* c=dupload(sln);
+                  accum(1,a,b,c,dOnes,w[0],n); cudaFree(a);cudaFree(b);cudaFree(c); }
+                /* w_1 * H */
+                accum(nd,dHoffU,dHstart,dHlen,dHvals,w[1],n);
+                /* P_2..P_K */
+                std::vector<int> Aoff=H.offsets, Alen=H.lengths; std::vector<size_t> Ast_=H.starts;
+                float* dAv2=dHvals;
+                for (int k=2;k<=K;++k){
+                    std::vector<int> Coff,Clen; std::vector<size_t> Cst;
+                    size_t Cnnz=mkc2(Aoff,Coff,Cst,Clen); int Cn=(int)Coff.size();
+                    if (Cnnz>CAP2){ if(dAv2!=dHvals) cudaFree(dAv2); dAv2=dHvals; break; }
+                    float* dCv; CUDA_CHECK(cudaMalloc(&dCv,Cnnz*4));
+                    size_t* dCst=dupload(Cst); int* dClen=dupload(std::vector<int>(Clen));
+                    if (!hamsim) {                                   /* ours: gather_flat */
+                        std::vector<int> pairPtr(Cn+1,0); std::vector<GPair> pairs;
+                        for (int q=0;q<Cn;++q){ int dc=Coff[q], minc=dc<0?dc:0; pairPtr[q]=(int)pairs.size();
+                            for (size_t ai=0; ai<Aoff.size(); ++ai){ int da=Aoff[ai], db=dc-da; if(db<=-n||db>=n) continue;
+                                auto it=hIdx.find(db); if(it==hIdx.end()) continue;
+                                GPair g; g.ab=Ast_[ai]; g.bb=H.starts[it->second];
+                                g.ash=(da<0?da:0)-minc; g.bsh=da+(db<0?db:0)-minc; g.al=Alen[ai]; g.bl=H.lengths[it->second];
+                                pairs.push_back(g); } }
+                        pairPtr[Cn]=(int)pairs.size();
+                        int ILPo=n>=65536?4:1, POS=TPB*ILPo; std::vector<int2> tiles;
+                        for (int q=0;q<Cn;++q) for (int ts=0; ts<Clen[q]; ts+=POS) tiles.push_back(make_int2(q,ts));
+                        GPair* dP=dupload(pairs); int* dPp=dupload(pairPtr); int2* dT=dupload(tiles); int nT=(int)tiles.size();
+                        if (ILPo==4) gather_flat_kernel<64,4><<<nT,TPB>>>(dAv2,dHvals,dT,dPp,dP,dCv,dCst,dClen);
+                        else         gather_flat_kernel<64,1><<<nT,TPB>>>(dAv2,dHvals,dT,dPp,dP,dCv,dCst,dClen);
+                        cudaFree(dP); cudaFree(dPp); cudaFree(dT);
+                    } else {                                          /* hamsim: diaq_product (imag=0) */
+                        std::vector<unsigned> pairOff(Cn+1,0),psA,psB,cO(Cn),cL(Cn); std::vector<int> pdA,pdB;
+                        for (int q=0;q<Cn;++q){ pairOff[q]=(unsigned)pdA.size();
+                            for (size_t ai=0; ai<Aoff.size(); ++ai){ int da=Aoff[ai], db=Coff[q]-da;
+                                auto it=hIdx.find(db); if(it==hIdx.end()) continue;
+                                pdA.push_back(da); pdB.push_back(db); psA.push_back((unsigned)ai); psB.push_back((unsigned)it->second); } }
+                        pairOff[Cn]=(unsigned)pdA.size();
+                        std::vector<unsigned> aO(Aoff.size()),aL(Aoff.size()),bO(nd),bL(nd);
+                        size_t Annz=0; for (size_t i=0;i<Aoff.size();++i){ aO[i]=(unsigned)Ast_[i]; aL[i]=(unsigned)Alen[i]; Annz+=Alen[i]; }
+                        for (int i=0;i<nd;++i){ bO[i]=(unsigned)H.starts[i]; bL[i]=(unsigned)H.lengths[i]; }
+                        for (int q=0;q<Cn;++q){ cO[q]=(unsigned)Cst[q]; cL[q]=(unsigned)Clen[q]; }
+                        int* dCi=dupload(std::vector<int>(Coff)); int* dpA=dupload(pdA); int* dpB=dupload(pdB);
+                        unsigned *dcO=dupload(cO),*dcL=dupload(cL),*dpO=dupload(pairOff),*dsA=dupload(psA),*dsB=dupload(psB);
+                        unsigned *daO=dupload(aO),*daL=dupload(aL),*dbO=dupload(bO),*dbL=dupload(bL);
+                        float *dAi,*dHi,*dCi2;
+                        CUDA_CHECK(cudaMalloc(&dAi,(Annz?Annz:1)*4)); CUDA_CHECK(cudaMemset(dAi,0,(Annz?Annz:1)*4));
+                        CUDA_CHECK(cudaMalloc(&dHi,H.nnz*4)); CUDA_CHECK(cudaMemset(dHi,0,H.nnz*4));
+                        CUDA_CHECK(cudaMalloc(&dCi2,Cnnz*4)); CUDA_CHECK(cudaMemset(dCi2,0,Cnnz*4));
+                        diaq_product_kernel<float><<<Cn,256>>>(Cn,dCi,dcO,dcL,dpO,dpA,dpB,dsA,dsB,
+                            daO,daL,dbO,dbL,dAv2,dAi,dHvals,dHi,dCv,dCi2);
+                        cudaFree(dCi);cudaFree(dpA);cudaFree(dpB);cudaFree(dcO);cudaFree(dcL);cudaFree(dpO);
+                        cudaFree(dsA);cudaFree(dsB);cudaFree(daO);cudaFree(daL);cudaFree(dbO);cudaFree(dbL);
+                        cudaFree(dAi);cudaFree(dHi);cudaFree(dCi2);
+                    }
+                    CUDA_CHECK(cudaGetLastError());
+                    /* accumulate c_k * P_k into U */
+                    std::vector<int> c2u(Cn),cst_i(Cn); int maxl=0;
+                    for (int q=0;q<Cn;++q){ c2u[q]=(int)Ust[uslot[Coff[q]]]; cst_i[q]=(int)Cst[q]; maxl=std::max(maxl,Clen[q]); }
+                    int* dC2U=dupload(c2u); int* dCsti=dupload(cst_i);
+                    accum(Cn,dC2U,dCsti,dClen,dCv,w[k],maxl);
+                    cudaFree(dC2U); cudaFree(dCsti);
+                    if (dAv2!=dHvals) cudaFree(dAv2);
+                    dAv2=dCv; Aoff=Coff; Alen=Clen; Ast_=Cst;
+                    cudaFree(dCst); cudaFree(dClen);
+                }
+                if (dAv2!=dHvals) cudaFree(dAv2);
+                CUDA_CHECK(cudaDeviceSynchronize());
+                cudaEventRecord(e1); cudaEventSynchronize(e1); cudaEventElapsedTime(out_ms,e0,e1);
+                cudaEventDestroy(e0); cudaEventDestroy(e1);
+            };
+            float ours_ms=0, ham_ms=0;
+            build(false,&ours_ms);
+            build(true,&ham_ms);
+            /* E2EOPBUILDCSV,file,n,K,U_diags,U_stored,ours_ms,hamsim_ms,hamsim_vs_ours */
+            printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,%.3f,%.3f,%.3f\n",
+                   file,n,K,Ud,Unnz,ours_ms,ham_ms, ham_ms>0?ham_ms/ours_ms:-1.0);
+            cudaFree(dU); cudaFree(dOnes); cudaFree(dHvals);
+            cudaFree(dHoffU); cudaFree(dHstart); cudaFree(dHlen);
+        }
     }
     return 0;
 }

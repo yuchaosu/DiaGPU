@@ -17,6 +17,7 @@
  * ============================================================ */
 #include "../dia_io.hpp"
 #include "../../spmspm/gather_flat.cuh"
+#include "../../spmspm/gather_flat_sym.cuh"   // L4: symmetric store/compute-half
 #include "../../spmspm/paper_hm.cuh"
 #include "common.cuh"
 
@@ -28,11 +29,11 @@
 #define CUSP_CHECK(x) do{cusparseStatus_t s=(x); if(s!=CUSPARSE_STATUS_SUCCESS){fprintf(stderr,"cuSPARSE %s:%d %d\n",__FILE__,__LINE__,(int)s);exit(1);}}while(0)
 
 struct Cstruct { std::vector<int> offsets, lengths; std::vector<size_t> starts; size_t nnz; };
-static Cstruct make_c(const DiaHost& A, const DiaHost& B){
+static Cstruct make_c(const DiaHost& A, const DiaHost& B, bool upper=false){
     int n = A.n; std::vector<char> present(2*(size_t)n-1, 0);
     for (int da : A.offsets) for (int db : B.offsets){ int dc = da+db; if (dc > -n && dc < n) present[dc+n-1] = 1; }
     Cstruct C; size_t off = 0;
-    for (int d = -(n-1); d <= n-1; ++d){
+    for (int d = (upper ? 0 : -(n-1)); d <= n-1; ++d){
         if (!present[d+n-1]) continue;
         int len = n - std::abs(d);
         C.offsets.push_back(d); C.starts.push_back(off); C.lengths.push_back(len); off += len;
@@ -43,8 +44,11 @@ static Cstruct make_c(const DiaHost& A, const DiaHost& B){
 int main(int argc, char** argv){
     if (argc < 2){ fprintf(stderr, "usage: %s <dia_file> [iters=100] [--no-cusparse]\n", argv[0]); return 1; }
     int iters = argc > 2 ? atoi(argv[2]) : 100;
-    bool do_cusp = true;
-    for (int a = 2; a < argc; ++a) if (!strcmp(argv[a], "--no-cusparse")) do_cusp = false;
+    bool do_cusp = true; const char* dumpf = nullptr;
+    for (int a = 2; a < argc; ++a){
+        if (!strcmp(argv[a], "--no-cusparse")) do_cusp = false;
+        else if (!strcmp(argv[a], "--dump") && a+1 < argc) dumpf = argv[++a];
+    }
 
     DiaHost H = load_dia(argv[1]);
     const int n = H.n, nd = (int)H.offsets.size();
@@ -97,7 +101,36 @@ int main(int argc, char** argv){
     std::vector<float> C_flat(C.nnz);
     CUDA_CHECK(cudaMemcpy(C_flat.data(), dCv, C.nnz*4, cudaMemcpyDeviceToHost));
     row("ours_flat", tms(launch_flat,10,iters), 0.0);
+    if (dumpf){ FILE* fp=fopen(dumpf,"w");
+        if (fp){ fprintf(fp,"N %d D %d\n",n,Cn);
+            for (int k=0;k<Cn;++k){ fprintf(fp,"%d:",C.offsets[k]); size_t b=C.starts[k]; int L=C.lengths[k];
+                for (int j=0;j<L;++j) fprintf(fp," %.9g",(double)C_flat[b+j]); fprintf(fp,"\n"); }
+            fclose(fp); fprintf(stderr,"# dumped ours_flat C=H*H -> %s (N=%d Cd=%d)\n",dumpf,n,Cn); } }
     cudaFree(dPairs); cudaFree(dPairPtr); cudaFree(dTiles); cudaFree(dCv);
+
+    /* ---------------- ours_sym: gather_flat_sym (L4, upper store/compute-half) ----------------
+     * VALID ONLY FOR SYMMETRIC H (H[+d]==H[-d]); all HamLib workloads are symmetric. On a
+     * non-symmetric H this is wrong by construction -> the check column (vs ours_flat) exposes it. */
+    {
+        Cstruct Cs = make_c(H, H, /*upper=*/true);
+        int Csn = (int)Cs.offsets.size();
+        std::vector<int> Aoff, Alen; std::vector<size_t> Ast; std::vector<int> Babs(n, -1);
+        for (int i=0;i<nd;++i) if (H.offsets[i]>=0){ int a=H.offsets[i]; Babs[a]=(int)Aoff.size();
+            Aoff.push_back(a); Alen.push_back(H.lengths[i]); Ast.push_back(H.starts[i]); }
+        FlatSymPlan sp = build_flat_sym_plan(n, Aoff,Alen,Ast, Alen,Ast, Babs, Cs.offsets, Cs.lengths, 256*4);
+        float* dCsv; CUDA_CHECK(cudaMalloc(&dCsv, Cs.nnz*4));
+        size_t* dCss = dupload(Cs.starts); int* dCsl = dupload(std::vector<int>(Cs.lengths));
+        GPair* dSP = dupload(sp.pairs); int* dSPP = dupload(sp.pairPtr); int2* dST = dupload(sp.tiles);
+        auto launch_sym = [&](){ gather_flat_sym_kernel<256,4><<<(int)sp.tiles.size(),256>>>(dHv,dHv,dST,dSPP,dSP,dCsv,dCss,dCsl); };
+        CUDA_CHECK(cudaMemset(dCsv,0,Cs.nnz*4)); launch_sym(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+        std::vector<float> C_sym(Cs.nnz); CUDA_CHECK(cudaMemcpy(C_sym.data(), dCsv, Cs.nnz*4, cudaMemcpyDeviceToHost));
+        std::unordered_map<int,int> fslot; for (int k=0;k<Cn;++k) fslot[C.offsets[k]]=k;
+        double md=0; for (int k=0;k<Csn;++k){ auto it=fslot.find(Cs.offsets[k]); if(it==fslot.end())continue;
+            size_t fb=C.starts[it->second], sb=Cs.starts[k]; int L=Cs.lengths[k];
+            for(int j=0;j<L;++j) md=std::max(md,(double)std::fabs((double)C_flat[fb+j]-(double)C_sym[sb+j])); }
+        row("ours_sym", tms(launch_sym,10,iters), md);
+        cudaFree(dCsv); cudaFree(dCss); cudaFree(dCsl); cudaFree(dSP); cudaFree(dSPP); cudaFree(dST);
+    }
 
     auto maxdiff_flat = [&](const std::vector<float>& g){
         double m = 0; for (size_t i = 0; i < C.nnz; ++i) m = std::max(m, (double)std::fabs((double)g[i] - (double)C_flat[i])); return m; };
