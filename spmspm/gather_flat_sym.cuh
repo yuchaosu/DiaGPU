@@ -51,30 +51,44 @@ __global__ void gather_flat_sym_kernel(
     const int p0 = pairPtr[k];
     const int np = pairPtr[k + 1] - p0;
 
+    // MAXP is a shared-memory PAIR-TILE, not a cap on np (same contract as
+    // gather_flat_kernel): wide-band C-diagonals have np > MAXP, so the pair
+    // list is tiled into MAXP chunks with accumulation across chunks.  The
+    // pre-2026-08-01 version loaded all np at once and overflowed the smem
+    // arrays whenever np > MAXP — the "wide-band sym crash".
     __shared__ size_t sAb[MAXP], sBb[MAXP];
     __shared__ int    sAsh[MAXP], sBsh[MAXP], sAl[MAXP], sBl[MAXP];
-    for (int q = threadIdx.x; q < np; q += blockDim.x) {
-        GPair g = pairs[p0 + q];
-        sAb[q]=g.ab; sBb[q]=g.bb; sAsh[q]=g.ash; sBsh[q]=g.bsh; sAl[q]=g.al; sBl[q]=g.bl;
-    }
-    __syncthreads();
 
     const int lenC = C_len[k];
     const size_t cbase = C_starts[k];
+    float acc[ILP];
+    int   pp[ILP];
     #pragma unroll
-    for (int r = 0; r < ILP; ++r) {
-        const int p = tstart + r * blockDim.x + threadIdx.x;
-        if (p >= lenC) break;
-        float acc = 0.0f;
-        for (int q = 0; q < np; ++q) {
-            const int pa = p + sAsh[q];
-            const int pb = p + sBsh[q];
-            if (pa < 0 || pa >= sAl[q]) continue;
-            if (pb < 0 || pb >= sBl[q]) continue;
-            acc += Av[sAb[q] + pa] * Bv[sBb[q] + pb];
+    for (int r = 0; r < ILP; ++r) { pp[r] = tstart + r * blockDim.x + threadIdx.x; acc[r] = 0.0f; }
+
+    for (int pc = 0; pc < np; pc += MAXP) {
+        int nc = np - pc; if (nc > MAXP) nc = MAXP;
+        __syncthreads();                                   // guard smem before reuse
+        for (int q = threadIdx.x; q < nc; q += blockDim.x) {
+            GPair g = pairs[p0 + pc + q];
+            sAb[q]=g.ab; sBb[q]=g.bb; sAsh[q]=g.ash; sBsh[q]=g.bsh; sAl[q]=g.al; sBl[q]=g.bl;
         }
-        Cv[cbase + p] = acc;
+        __syncthreads();
+        #pragma unroll
+        for (int r = 0; r < ILP; ++r) {
+            const int p = pp[r];
+            if (p >= lenC) continue;
+            for (int q = 0; q < nc; ++q) {
+                const int pa = p + sAsh[q];
+                const int pb = p + sBsh[q];
+                if (pa < 0 || pa >= sAl[q]) continue;
+                if (pb < 0 || pb >= sBl[q]) continue;
+                acc[r] += Av[sAb[q] + pa] * Bv[sBb[q] + pb];
+            }
+        }
     }
+    #pragma unroll
+    for (int r = 0; r < ILP; ++r) if (pp[r] < lenC) Cv[cbase + pp[r]] = acc[r];
 }
 
 /* Host pair/tile plan for the SYMMETRIC C = A*B (A=B=upper H).
