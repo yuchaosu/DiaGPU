@@ -156,7 +156,11 @@ struct CsrHost {
 
 // Convert compact diagonals to CSR. Offsets must be ascending (load_dia
 // guarantees this), so each row's columns come out ascending too.
-static CsrHost dia_to_csr(const DiaHost& H) {
+// drop_zeros (default): textbook CSR = true nonzeros only.  Passing false
+// keeps the diagonals' interior zeros as explicit entries — that was the
+// (unfair-to-CSR-baselines) behavior of every run before 2026-08-01: it
+// inflates baseline work by 1/fill and moves the int32 wall to STORED nnz.
+static CsrHost dia_to_csr(const DiaHost& H, bool drop_zeros = true) {
     const int n = H.n;
     CsrHost csr; csr.n = n;
     csr.row_ptr.assign(n + 1, 0);
@@ -170,8 +174,10 @@ static CsrHost dia_to_csr(const DiaHost& H) {
             const int col = i + d;
             if (col < 0 || col >= n) continue;
             const int pos = (d >= 0) ? i : (i + d);   // p = min(row,col)
+            const float v = H.values[H.starts[k] + pos];
+            if (drop_zeros && v == 0.f) continue;
             csr.col_idx.push_back(col);
-            csr.vals.push_back(H.values[H.starts[k] + pos]);
+            csr.vals.push_back(v);
         }
         csr.row_ptr64[i + 1] = (int64_t)csr.col_idx.size();
         csr.row_ptr[i + 1]   = (int)csr.col_idx.size();   // exact while nnz <= INT32_MAX

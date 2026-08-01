@@ -13,8 +13,68 @@
 #include <cstdlib>
 #include <cmath>
 #include <vector>
+#include <cstdlib>
+#include <atomic>
+#include <thread>
+#include <chrono>
+#include <nvml.h>
 
 #define CUDA_CHECK(x) do{cudaError_t e=(x); if(e!=cudaSuccess){fprintf(stderr,"CUDA %s:%d %s\n",__FILE__,__LINE__,cudaGetErrorString(e));exit(1);}}while(0)
+
+/* ---- ENERGY=1 hook: measure J/apply for whatever tms() times -------------
+ * Loops the kernel for >=ENERGY_SECS (default 6s, >> the ~100ms update
+ * period of the power counter), samples NVML power at 25ms, integrates,
+ * and subtracts an idle baseline sampled once per process.  Emits
+ *   ENERGYRAW,<J_per_call_net>,<avg_W>,<idle_W>,<iters>
+ * on stdout immediately BEFORE the caller's own CSV row, so post-processing
+ * pairs each ENERGYRAW with the row that follows it.                       */
+static double g_idle_W = -1.0;
+static nvmlDevice_t g_nvml_dev;
+static bool g_nvml_ok = false;
+static inline double energy_sample_W(){
+    unsigned mw = 0;
+    return nvmlDeviceGetPowerUsage(g_nvml_dev, &mw) == NVML_SUCCESS ? mw / 1000.0 : -1.0;
+}
+template<class F> static void energy_probe(F f, float ms_per_call){
+    const char* env = getenv("ENERGY");
+    if (!env || !*env || ms_per_call <= 0) return;
+    if (!g_nvml_ok) {
+        if (nvmlInit() != NVML_SUCCESS) return;
+        if (nvmlDeviceGetHandleByIndex(0, &g_nvml_dev) != NVML_SUCCESS) return;
+        g_nvml_ok = true;
+        /* idle baseline: 2s of samples with the GPU quiet */
+        CUDA_CHECK(cudaDeviceSynchronize());
+        double acc = 0; int cnt = 0;
+        for (int i = 0; i < 80; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            double w = energy_sample_W(); if (w > 0){ acc += w; ++cnt; }
+        }
+        g_idle_W = cnt ? acc / cnt : -1.0;
+    }
+    const double secs = atof(env) > 1.0 ? atof(env) : 6.0;
+    long it = std::max(32L, (long)(secs * 1000.0 / ms_per_call));
+    std::atomic<bool> stop{false};
+    std::atomic<long> nsmp{0};
+    double joules = 0;
+    std::thread th([&]{
+        auto t0 = std::chrono::steady_clock::now(); auto tp = t0;
+        while (!stop.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            auto tn = std::chrono::steady_clock::now();
+            double w = energy_sample_W();
+            if (w > 0){ joules += w * std::chrono::duration<double>(tn - tp).count(); ++nsmp; }
+            tp = tn;
+        }
+    });
+    auto w0 = std::chrono::steady_clock::now();
+    for (long i = 0; i < it; ++i) f();
+    CUDA_CHECK(cudaDeviceSynchronize());
+    double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - w0).count();
+    stop = true; th.join();
+    const double avg_W = wall > 0 ? joules / wall : -1;
+    const double net_J = (avg_W > 0 && g_idle_W > 0) ? (avg_W - g_idle_W) * wall / it : -1;
+    printf("ENERGYRAW,%.6e,%.1f,%.1f,%ld\n", net_J, avg_W, g_idle_W, it);
+}
 
 template<class F> static float tms(F f, int wu, int it){
     for (int i = 0; i < wu; ++i) f();
@@ -25,6 +85,7 @@ template<class F> static float tms(F f, int wu, int it){
     cudaEventRecord(e); cudaEventSynchronize(e);
     float ms; cudaEventElapsedTime(&ms, s, e);
     cudaEventDestroy(s); cudaEventDestroy(e);
+    energy_probe(f, ms / it);       /* inert unless ENERGY=1 */
     return ms / it;
 }
 

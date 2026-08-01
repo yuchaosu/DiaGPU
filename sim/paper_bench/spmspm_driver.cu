@@ -136,7 +136,10 @@ int main(int argc, char** argv){
         double m = 0; for (size_t i = 0; i < C.nnz; ++i) m = std::max(m, (double)std::fabs((double)g[i] - (double)C_flat[i])); return m; };
 
     /* ---------------- HM atomic-scatter (Haque et al.) ---------------- */
-    {
+    if (C.nnz > (size_t)INT32_MAX) {
+        /* HM layout (total_nz, diag_starts) is int32 — architectural N/A */
+        fprintf(stderr, "# hm_atomic skipped: C nnz %zu exceeds HM int32 layout\n", (size_t)C.nnz);
+    } else {
         HMMatrix hA; hA.n=n; hA.num_diags=nd; hA.diag_offsets=H.offsets; hA.diag_lengths=H.lengths;
         hA.values=H.values; hA.total_nz=(int)H.nnz;
         hA.diag_starts.resize(nd); for (int i=0;i<nd;++i) hA.diag_starts[i]=(int)H.starts[i];
@@ -146,11 +149,11 @@ int main(int argc, char** argv){
         auto up=[&](void**p,const void*s,size_t b){CUDA_CHECK(cudaMalloc(p,b));CUDA_CHECK(cudaMemcpy(*p,s,b,cudaMemcpyHostToDevice));};
         up((void**)&hAv,hA.values.data(),hA.values.size()*4); up((void**)&hAo,hA.diag_offsets.data(),nd*4);
         up((void**)&hAs,hA.diag_starts.data(),nd*4); up((void**)&hAl,hA.diag_lengths.data(),nd*4);
-        float* hCv; int *hCo,*hCs,*hCl,*hClk; CUDA_CHECK(cudaMalloc(&hCv,hC.total_nz*4));
+        float* hCv; int *hCo,*hCs,*hCl,*hClk; CUDA_CHECK(cudaMalloc(&hCv,(size_t)hC.total_nz*4));
         up((void**)&hCo,hC.diag_offsets.data(),hC.num_diags*4); up((void**)&hCs,hC.diag_starts.data(),hC.num_diags*4);
         up((void**)&hCl,hC.diag_lengths.data(),hC.num_diags*4); up((void**)&hClk,cLk.data(),cLk.size()*4);
         int nzA = hA.total_nz, blk = (nzA+255)/256;
-        auto launch_hm=[&](){ CUDA_CHECK(cudaMemset(hCv,0,hC.total_nz*4));
+        auto launch_hm=[&](){ CUDA_CHECK(cudaMemset(hCv,0,(size_t)hC.total_nz*4));
             hm_structured_sparse_matmul_kernel<<<blk,256>>>(hAv,hAo,hAs,hAl,nd, hAv,hAo,hAs,hAl,nd,
                 hCv,hCo,hCs,hCl,hC.num_diags,hClk, nzA,n); };
         launch_hm(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
@@ -164,6 +167,10 @@ int main(int argc, char** argv){
     /* ---------------- HamSim/libdiaq product kernel, fp64 + fp32 -------- */
     auto run_diaq = [&](auto vt_tag, const char* kern){
         using VT = decltype(vt_tag);
+        if (C.nnz > (size_t)UINT32_MAX) {   /* diaq addresses C with unsigned */
+            fprintf(stderr, "# %s skipped: C nnz %zu exceeds diaq u32 layout\n", kern, (size_t)C.nnz);
+            return;
+        }
         std::vector<unsigned> pairOff(Cn+1,0); std::vector<int> pdA,pdB; std::vector<unsigned> psA,psB;
         for (int r = 0; r < Cn; ++r){
             pairOff[r] = (unsigned)pdA.size();
@@ -183,9 +190,17 @@ int main(int argc, char** argv){
         int *dCi=dupload(std::vector<int>(C.offsets)), *dpA=dupload(pdA), *dpB=dupload(pdB);
         unsigned *dcO=dupload(cO), *dcL=dupload(cL), *dpO=dupload(pairOff);
         unsigned *dsA=dupload(psA), *dsB=dupload(psB), *daO=dupload(aO), *daL=dupload(aL);
-        VT *dCr,*dCim;
-        CUDA_CHECK(cudaMalloc(&dCr, C.nnz*sizeof(VT)));
-        CUDA_CHECK(cudaMalloc(&dCim,C.nnz*sizeof(VT)));
+        VT *dCr = nullptr, *dCim = nullptr;   /* graceful OOM: skip arm, keep the driver alive */
+        if (cudaMalloc(&dCr, C.nnz*sizeof(VT)) != cudaSuccess ||
+            cudaMalloc(&dCim,C.nnz*sizeof(VT)) != cudaSuccess) {
+            cudaGetLastError();
+            fprintf(stderr, "# %s skipped: OOM allocating 2x %zu B for C\n", kern, (size_t)C.nnz*sizeof(VT));
+            if (dCr) cudaFree(dCr);
+            cudaFree(dAr);cudaFree(dAi);cudaFree(dCi);cudaFree(dpA);cudaFree(dpB);
+            cudaFree(dcO);cudaFree(dcL);cudaFree(dpO);cudaFree(dsA);cudaFree(dsB);
+            cudaFree(daO);cudaFree(daL);
+            return;
+        }
         auto l=[&](){
             cudaMemset(dCr,0,C.nnz*sizeof(VT)); cudaMemset(dCim,0,C.nnz*sizeof(VT));
             diaq_product_kernel<VT><<<Cn,256>>>(Cn,dCi,dcO,dcL,dpO,dpA,dpB,dsA,dsB,
@@ -200,7 +215,9 @@ int main(int argc, char** argv){
         cudaFree(dcO);cudaFree(dcL);cudaFree(dpO);cudaFree(dsA);cudaFree(dsB);
         cudaFree(daO);cudaFree(daL);cudaFree(dCr);cudaFree(dCim);
     };
-    run_diaq(double(0), "diaq_fp64");
+    /* fp64 arm removed from the standard run (2026-08-01): the paper reports
+     * diaq fp32 only; re-enable via DIAQ_FP64=1 for accuracy cross-checks */
+    if (getenv("DIAQ_FP64")) run_diaq(double(0), "diaq_fp64");
     run_diaq(float(0),  "diaq_fp32");
     cudaFree(dHv); cudaFree(dCs); cudaFree(dClen);
 

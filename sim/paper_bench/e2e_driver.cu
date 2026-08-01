@@ -14,14 +14,22 @@
  * Workload (b): operator-power chain H^2, H^3 with the pair-plan SpMSpM
  * (gather_flat, host-built schedule per step) vs a cuSPARSE SpGEMM chain
  * (with SpGEMM_copy materialization so each output feeds the next step).
- * Guarded by a projected-nnz cap; a cuSPARSE INSUFFICIENT_RESOURCES wall
- * is reported as -1 (itself a datapoint: the fill-in wall).
+ * No projected-nnz cap: allocations are ATTEMPTED and a cudaMalloc failure
+ * is reported as -1 (the measured OOM wall, not a projection).  A chain
+ * truncated mid-power logs "# opbuild truncated" on stderr.
  *
  * Output rows:
  *   E2EEVCSV,file,n,D,steps,K,pick,plan_ms,csr_ms,ours_ms,cusp_ms,x,relerr
+ *   E2EEVDIAQCSV,file,n,D,steps,K,diaq_plan_ms,diaq_ms,diaq_vs_ours,relerr_vs_ours
+ *       (same Taylor pipeline with the diaq/HamSim fused complex SpMV kernel,
+ *        device-resident — their best case; A_imag = 0)
  *   E2EOPCSV,file,n,D,power,Cd,nnzC,plan_ms,kernel_ms,cusp_ms
+ *   E2EOPBUILDCSV: full rows carry ours vs hamsim(diaq); the --sym L4 row has
+ *        hamsim=-1.  The FULL build now also runs under --sym (before the sym
+ *        block, which may crash on wide-band H) so HamLib gets the diaq
+ *        comparison too.
  *
- * usage: e2e_driver <dia_file> [steps=200] [K=6] [--no-op] [--no-cusparse]
+ * usage: e2e_driver <dia_file> [steps=200] [K=6] [--no-op] [--no-cusparse] [--no-diaq]
  * ============================================================ */
 #include "../dia_io.hpp"
 #include "../../spmv/src/spmv_gather.cuh"
@@ -44,6 +52,14 @@
 static double wall_ms(){
     using namespace std::chrono;
     return duration<double,std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+
+/* graceful device alloc: nullptr on OOM (error cleared), so the caller can
+ * report the measured wall instead of exiting mid-driver */
+static float* try_dmalloc_f(size_t nfloats){
+    float* p = nullptr;
+    if (cudaMalloc(&p, nfloats*4) != cudaSuccess){ cudaGetLastError(); return nullptr; }
+    return p;
 }
 
 /* u = t + c*v0   (complex, planes: re at [0,n), im at [n,2n)) */
@@ -103,11 +119,13 @@ int main(int argc, char** argv){
     int S = argc > 2 && argv[2][0] != '-' ? atoi(argv[2]) : 1000;
     /* K: explicit arg wins; else the per-matrix convergence order from the filename */
     int K = argc > 3 && argv[3][0] != '-' ? atoi(argv[3]) : k_from_name(argv[1]);
-    bool do_op = true, do_cusp = true, do_opbuild = true, do_sym = false;
+    bool do_op = true, do_cusp = true, do_opbuild = true, do_sym = false, do_diaq = true, dump_state = false;
     for (int a = 2; a < argc; ++a){
         if (!strcmp(argv[a], "--no-op")) do_op = false;
         if (!strcmp(argv[a], "--no-cusparse")) do_cusp = false;
         if (!strcmp(argv[a], "--no-opbuild")) do_opbuild = false;
+        if (!strcmp(argv[a], "--no-diaq")) do_diaq = false;
+        if (!strcmp(argv[a], "--dump-state")) dump_state = true;   /* v0 + final psi -> cwd, for external verification */
         if (!strcmp(argv[a], "--sym")) do_sym = true;   /* L4 upper-half operator-build (symmetric H only) */
     }
     DiaHost H = load_dia(argv[1]);
@@ -170,6 +188,10 @@ int main(int argc, char** argv){
     cusparseDnVecDescr_t vI = nullptr, vO = nullptr; void* dbuf = nullptr;
     int *ccrp = nullptr, *ccci = nullptr; float* ccv = nullptr;
     double csr_ms = 0;
+    if (do_cusp && (size_t)H.nnz > (size_t)INT32_MAX) {
+        do_cusp = false;   /* cusparseCreateCsr(32I) rejects nnz > INT32_MAX; report -1 instead of dying */
+        fprintf(stderr, "# cusparse arm skipped: H nnz %zu > INT32_MAX\n", (size_t)H.nnz);
+    }
     if (do_cusp) {
         t0 = wall_ms();
         CsrHost csr = dia_to_csr(H);
@@ -200,6 +222,27 @@ int main(int argc, char** argv){
         cudaFree(tmp);
     }
 
+    /* diaq/HamSim pipeline: their fused complex SpMV kernel (device-resident,
+     * their best case; A_imag = 0).  Setup (uploads) timed as its plan. */
+    double diaq_plan_ms = 0;
+    int* dqIdx = nullptr; unsigned *dqOff = nullptr, *dqLen = nullptr;
+    float *dqAr = nullptr, *dqAi = nullptr;
+    if (do_diaq) {
+        t0 = wall_ms();
+        std::vector<unsigned> qo(nd), ql(nd);
+        for (int i = 0; i < nd; ++i){ qo[i]=(unsigned)H.starts[i]; ql[i]=(unsigned)H.lengths[i]; }
+        dqIdx = dupload(std::vector<int>(H.offsets));
+        dqOff = dupload(qo); dqLen = dupload(ql);
+        dqAr  = dupload(H.values);
+        CUDA_CHECK(cudaMalloc(&dqAi, H.nnz*4)); CUDA_CHECK(cudaMemset(dqAi, 0, H.nnz*4));
+        CUDA_CHECK(cudaDeviceSynchronize());
+        diaq_plan_ms = wall_ms() - t0;
+    }
+    auto apply_diaq = [&](const float* X, float* Y){
+        diaq_spmv_row_kernel<float><<<b1,TPB>>>((unsigned)n,(unsigned)n,(unsigned)nd,
+            dqIdx,dqOff,dqLen, dqAr,dqAi, X, X+n, Y, Y+n);
+    };
+
     /* Horner coefficients c_k = (-i dt)^k / k! */
     const double dt = 1.0e-3;
     std::vector<double> cr(K+1), ci(K+1);
@@ -226,19 +269,28 @@ int main(int argc, char** argv){
     CUDA_CHECK(cudaMalloc(&dtv, 2*(size_t)n*4));
     const int vb = (n + TPB - 1)/TPB;
 
-    auto run_pipeline = [&](bool ours, float* out_ms)->std::vector<float>{
-        CUDA_CHECK(cudaMemcpy(dst, v0h.data(), 2*(size_t)n*4, cudaMemcpyHostToDevice));
-        cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
-        cudaEventRecord(e0);
-        for (int s = 0; s < S; ++s) {
+    auto run_pipeline = [&](int mode, float* out_ms)->std::vector<float>{   /* 0=ours 1=cusp 2=diaq */
+        auto step = [&](){
             /* u = c_K * state; then K times: t = H u ; u = t + c_k * state */
             cset_kernel<<<vb,TPB>>>(n, (float)cr[K], (float)ci[K], dst, du);
             for (int k = K - 1; k >= 0; --k) {
-                if (ours) apply_ours(du, dtv); else apply_cusp(du, dtv);
+                if (mode == 0) apply_ours(du, dtv);
+                else if (mode == 1) apply_cusp(du, dtv);
+                else apply_diaq(du, dtv);
                 caxpy_kernel<<<vb,TPB>>>(n, (float)cr[k], (float)ci[k], dtv, dst, du);
             }
             std::swap(du, dst);          /* new state */
-        }
+        };
+        /* warmup: each pipeline pays its own clock/cache ramp.  Without this the
+         * FIRST pipeline (ours) absorbs the cold-GPU penalty — measured up to
+         * 29x inflation on the H100 (B2_10_4, first matrix; heis_16/18 4.3-4.7x). */
+        CUDA_CHECK(cudaMemcpy(dst, v0h.data(), 2*(size_t)n*4, cudaMemcpyHostToDevice));
+        for (int s = 0; s < std::min(S, 20); ++s) step();
+        CUDA_CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaMemcpy(dst, v0h.data(), 2*(size_t)n*4, cudaMemcpyHostToDevice));
+        cudaEvent_t e0, e1; cudaEventCreate(&e0); cudaEventCreate(&e1);
+        cudaEventRecord(e0);
+        for (int s = 0; s < S; ++s) step();
         cudaEventRecord(e1); cudaEventSynchronize(e1);
         cudaEventElapsedTime(out_ms, e0, e1);
         cudaEventDestroy(e0); cudaEventDestroy(e1);
@@ -248,9 +300,19 @@ int main(int argc, char** argv){
     };
 
     float ours_ms = 0, cusp_ms = -1; double rel = -1;
-    auto so = run_pipeline(true, &ours_ms);
+    auto so = run_pipeline(0, &ours_ms);
+    if (dump_state) {   /* fp32 planes: re [0,n) then im [n,2n) — QuTiP/SciPy triangle check */
+        FILE* fv = fopen("e2e_state_v0.bin", "wb");
+        FILE* fp = fopen("e2e_state_final.bin", "wb");
+        if (fv && fp) {
+            fwrite(v0h.data(), 4, v0h.size(), fv);
+            fwrite(so.data(),  4, so.size(),  fp);
+            fprintf(stderr, "# dumped e2e_state_{v0,final}.bin (n=%d, S=%d, K=%d)\n", n, S, K);
+        }
+        if (fv) fclose(fv); if (fp) fclose(fp);
+    }
     if (do_cusp) {
-        auto sc = run_pipeline(false, &cusp_ms);
+        auto sc = run_pipeline(1, &cusp_ms);
         double num = 0, den = 0;
         for (size_t i = 0; i < so.size(); ++i){ double d = (double)so[i]-sc[i]; num += d*d; den += (double)sc[i]*sc[i]; }
         rel = den > 0 ? std::sqrt(num/den) : 0;
@@ -258,6 +320,17 @@ int main(int argc, char** argv){
     printf("E2EEVCSV,%s,%d,%d,%d,%d,%s,%.3f,%.3f,%.3f,%.3f,%.3f,%.3e\n",
            file, n, nd, S, K, pick, plan_ms, csr_ms, ours_ms, cusp_ms,
            cusp_ms > 0 ? cusp_ms/ours_ms : -1.0, rel);
+    if (do_diaq) {
+        float dq_ms = 0;
+        auto sd = run_pipeline(2, &dq_ms);
+        double num = 0, den = 0;
+        for (size_t i = 0; i < so.size(); ++i){ double d = (double)sd[i]-so[i]; num += d*d; den += (double)so[i]*so[i]; }
+        double reld = den > 0 ? std::sqrt(num/den) : 0;
+        printf("E2EEVDIAQCSV,%s,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3e\n",
+               file, n, nd, S, K, diaq_plan_ms, dq_ms,
+               ours_ms > 0 ? dq_ms/ours_ms : -1.0, reld);
+        cudaFree(dqIdx); cudaFree(dqOff); cudaFree(dqLen); cudaFree(dqAr); cudaFree(dqAi);
+    }
 
     /* =================== (b) operator chain =================== */
     if (do_op) {
@@ -277,11 +350,12 @@ int main(int argc, char** argv){
         std::vector<int> Aoff = H.offsets, Alen = H.lengths;
         std::vector<size_t> Ast = H.starts;
         float* dAvv = dHv;
-        const size_t CAP = (size_t)4e8;
         for (int p = 2; p <= 3; ++p) {
             Cs C = mkc(Aoff);
-            if (C.nnz > CAP) { printf("E2EOPCSV,%s,%d,%d,%d,%zu,%zu,-1,-1,-1\n",
-                                      file, n, nd, p, C.off.size(), C.nnz); break; }
+            /* no cap: attempt the C allocation; failure = the measured OOM wall */
+            float* dCv = try_dmalloc_f(C.nnz);
+            if (!dCv) { printf("E2EOPCSV,%s,%d,%d,%d,%zu,%zu,-1,-1,-1\n",
+                               file, n, nd, p, C.off.size(), C.nnz); break; }
             double tp0 = wall_ms();
             int Cn = (int)C.off.size();
             std::vector<int> pairPtr(Cn+1, 0); std::vector<GPair> pairs;
@@ -305,7 +379,6 @@ int main(int argc, char** argv){
             double plan_op = wall_ms() - tp0;
             GPair* dP = dupload(pairs); int* dPp = dupload(pairPtr); int2* dT = dupload(tiles);
             size_t* dCs2 = dupload(C.st); int* dCl = dupload(std::vector<int>(C.len));
-            float* dCv; CUDA_CHECK(cudaMalloc(&dCv, C.nnz*4));
             int nT = (int)tiles.size();
             auto l = [&](){
                 if (ILPo == 4) gather_flat_kernel<64,4><<<nT,TPB>>>(dAvv,dHv,dT,dPp,dP,dCv,dCs2,dCl);
@@ -326,8 +399,10 @@ int main(int argc, char** argv){
 
     /* =================== (c-sym) operator-building — L4 SYMMETRIC (upper-half) ===================
      * --sym: build U = sum w_k H^k storing U and every power P_k UPPER-half (offsets>=0) via
-     * gather_flat_sym. VALID ONLY for symmetric H (HamLib). SuiteSparse -> run WITHOUT --sym. */
-    if (do_opbuild && do_sym) {
+     * gather_flat_sym. VALID ONLY for symmetric H (HamLib). SuiteSparse -> run WITHOUT --sym.
+     * Runs as a FUNCTION invoked AFTER the full build below: gather_flat_sym is known to
+     * crash on wide-band H, and running it last keeps the full ours-vs-hamsim row safe. */
+    auto run_sym_opbuild = [&](){
         auto mkc_up = [&](const std::vector<int>& ao, std::vector<int>& coff, std::vector<size_t>& cst, std::vector<int>& clen)->size_t{
             std::vector<char> pres(2*(size_t)n-1,0);
             for (int da:ao) for (int db:H.offsets){ int dc=da+db; if(dc>-n&&dc<n) pres[dc+n-1]=1; }
@@ -342,13 +417,17 @@ int main(int argc, char** argv){
         std::vector<int> Uo(uset.begin(),uset.end()); int Ud=(int)Uo.size();
         std::unordered_map<int,int> uslot; std::vector<size_t> Ust(Ud); std::vector<int> Ulen(Ud);
         size_t uo=0; for(int i=0;i<Ud;++i){ uslot[Uo[i]]=i; Ulen[i]=n-Uo[i]; Ust[i]=uo; uo+=Ulen[i]; }
-        const size_t Unnz=uo, CAP2=(size_t)6e8;
-        if (Unnz>CAP2){ printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,-1,-1,-1\n",file,n,K,Ud,Unnz); }
+        const size_t Unnz=uo;
+        /* wall = OOM *or* int32 index limit: accum takes int starts, so any
+         * U beyond INT32_MAX would wrap the (int)Ust casts below */
+        float* dU = Unnz > (size_t)INT32_MAX ? nullptr : try_dmalloc_f(Unnz);
+        if (!dU){ printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,-1,-1,-1\n",file,n,K,Ud,Unnz);
+                  fprintf(stderr,"# opbuild(sym) wall: Unnz=%zu (%s)\n",Unnz,
+                          Unnz>(size_t)INT32_MAX?"int32 index limit":"OOM"); }
         else {
             std::vector<int> Hup_off,Hup_len; std::vector<size_t> Hup_st; std::vector<int> Babs(n,-1);
             for (int i=0;i<nd;++i) if(H.offsets[i]>=0){ int a=H.offsets[i]; Babs[a]=(int)Hup_off.size(); Hup_off.push_back(a); Hup_len.push_back(H.lengths[i]); Hup_st.push_back(H.starts[i]); }
             float* dHvals=dupload(H.values);
-            float* dU; CUDA_CHECK(cudaMalloc(&dU,Unnz*4));
             std::vector<double> w(K+1); w[0]=1.0; for(int k=1;k<=K;++k) w[k]=w[k-1]*dt/k;
             float* dOnes; CUDA_CHECK(cudaMalloc(&dOnes,(size_t)n*4)); ones_kernel<<<(n+TPB-1)/TPB,TPB>>>(n,dOnes);
             auto accum=[&](int sd,int* dS2U,int* dSst,int* dSlen,float* sval,double c_,int maxl){
@@ -364,9 +443,12 @@ int main(int argc, char** argv){
             std::vector<int> Aoff=Hup_off, Alen=Hup_len; std::vector<size_t> Ast=Hup_st; float* dAv=dHvals;
             for (int k=2;k<=K;++k){
                 std::vector<int> Coff,Clen; std::vector<size_t> Cst; size_t Cnnz=mkc_up(Aoff,Coff,Cst,Clen); int Cn2=(int)Coff.size();
-                if (Cnnz>CAP2){ if(dAv!=dHvals)cudaFree(dAv); dAv=dHvals; break; }
+                float* dPk = Cnnz > (size_t)INT32_MAX ? nullptr : try_dmalloc_f(Cnnz);
+                if (!dPk){ fprintf(stderr,"# opbuild(sym) truncated at k=%d (%s, Cnnz=%zu)\n", k,
+                                   Cnnz>(size_t)INT32_MAX?"int32 index limit":"OOM", Cnnz);
+                           if(dAv!=dHvals)cudaFree(dAv); dAv=dHvals; break; }
+                CUDA_CHECK(cudaMemset(dPk,0,Cnnz*4));
                 FlatSymPlan spn=build_flat_sym_plan(n, Aoff,Alen,Ast, Hup_len,Hup_st, Babs, Coff,Clen, TPB*4);
-                float* dPk; CUDA_CHECK(cudaMalloc(&dPk,Cnnz*4)); CUDA_CHECK(cudaMemset(dPk,0,Cnnz*4));
                 size_t* dCst=dupload(Cst); int* dCl=dupload(std::vector<int>(Clen));
                 GPair* dP=dupload(spn.pairs); int* dPp=dupload(spn.pairPtr); int2* dT=dupload(spn.tiles);
                 gather_flat_sym_kernel<256,4><<<(int)spn.tiles.size(),256>>>(dAv,dHvals,dT,dPp,dP,dPk,dCst,dCl);
@@ -385,12 +467,13 @@ int main(int argc, char** argv){
             printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,%.3f,-1,-1\n", file,n,K,Ud,Unnz,sym_ms);
             cudaFree(dU);cudaFree(dOnes);cudaFree(dHvals);
         }
-    }
+    };
 
     /* =================== (c) operator-building Taylor: U = sum_{k=0}^{K} c_k H^k (FULL) ===================
-     * Default (no --sym): full-C build, ours(gather_flat) vs hamsim(diaq). Used for SuiteSparse /
-     * any general matrix. H real so each P_k real; only c_k = (-i dt)^k/k! are complex. */
-    if (do_opbuild && !do_sym) {
+     * Full-C build, ours(gather_flat) vs hamsim(diaq).  Runs for EVERY matrix (also under
+     * --sym, so HamLib gets the hamsim comparison); the L4 sym build follows afterwards.
+     * H real so each P_k real; only c_k = (-i dt)^k/k! are complex. */
+    if (do_opbuild) {
         auto mkc2 = [&](const std::vector<int>& ao, std::vector<int>& coff,
                         std::vector<size_t>& cst, std::vector<int>& clen)->size_t {
             std::vector<char> pres(2*(size_t)n-1, 0);
@@ -410,13 +493,17 @@ int main(int argc, char** argv){
         std::unordered_map<int,int> uslot;
         std::vector<size_t> Ust(Ud); std::vector<int> Ulen(Ud);
         size_t uo=0; for (int i=0;i<Ud;++i){ uslot[Uo[i]]=i; Ulen[i]=n-std::abs(Uo[i]); Ust[i]=uo; uo+=Ulen[i]; }
-        const size_t Unnz=uo, CAP2=(size_t)6e8;
-        if (Unnz > CAP2) {
+        const size_t Unnz=uo;
+        /* wall = OOM *or* int32 index limit ((int)Ust / (int)H.starts casts below;
+         * Unnz >= H.nnz since U contains every H diagonal, so one check covers both) */
+        float* dU = Unnz > (size_t)INT32_MAX ? nullptr : try_dmalloc_f(Unnz);
+        if (!dU) {
             printf("E2EOPBUILDCSV,%s,%d,%d,%d,%zu,-1,-1,-1\n", file,n,K,Ud,Unnz);
+            fprintf(stderr,"# opbuild wall: Unnz=%zu (%s)\n",Unnz,
+                    Unnz>(size_t)INT32_MAX?"int32 index limit":"OOM");
         } else {
             std::unordered_map<int,int> hIdx; for (int i=0;i<nd;++i) hIdx[H.offsets[i]]=i;
             float* dHvals = dupload(H.values);
-            float* dU; CUDA_CHECK(cudaMalloc(&dU,Unnz*4));
             std::vector<double> w(K+1); w[0]=1.0; for (int k=1;k<=K;++k) w[k]=w[k-1]*dt/k;  /* |c_k| = dt^k/k! */
             float* dOnes; CUDA_CHECK(cudaMalloc(&dOnes,(size_t)n*4)); ones_kernel<<<(n+TPB-1)/TPB,TPB>>>(n,dOnes);
             std::vector<int> h2u(nd), hst_i(nd);
@@ -441,8 +528,11 @@ int main(int argc, char** argv){
                 for (int k=2;k<=K;++k){
                     std::vector<int> Coff,Clen; std::vector<size_t> Cst;
                     size_t Cnnz=mkc2(Aoff,Coff,Cst,Clen); int Cn=(int)Coff.size();
-                    if (Cnnz>CAP2){ if(dAv2!=dHvals) cudaFree(dAv2); dAv2=dHvals; break; }
-                    float* dCv; CUDA_CHECK(cudaMalloc(&dCv,Cnnz*4));
+                    float* dCv = Cnnz > (size_t)INT32_MAX ? nullptr : try_dmalloc_f(Cnnz);
+                    if (!dCv){ fprintf(stderr,"# opbuild(%s) truncated at k=%d (%s, Cnnz=%zu)\n",
+                                       hamsim?"hamsim":"ours", k,
+                                       Cnnz>(size_t)INT32_MAX?"int32 index limit":"OOM", Cnnz);
+                               if(dAv2!=dHvals) cudaFree(dAv2); dAv2=dHvals; break; }
                     size_t* dCst=dupload(Cst); int* dClen=dupload(std::vector<int>(Clen));
                     if (!hamsim) {                                   /* ours: gather_flat */
                         std::vector<int> pairPtr(Cn+1,0); std::vector<GPair> pairs;
@@ -509,5 +599,7 @@ int main(int argc, char** argv){
             cudaFree(dHoffU); cudaFree(dHstart); cudaFree(dHlen);
         }
     }
+    /* L4 sym build LAST — a wide-band crash here cannot eat the rows above */
+    if (do_opbuild && do_sym) run_sym_opbuild();
     return 0;
 }

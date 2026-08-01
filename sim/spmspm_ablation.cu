@@ -126,17 +126,22 @@ int main(int argc,char**argv){
     float t_sym=tms(launch_sym,3,iters);
 
     // ================= L0 HM (base) =================
+    // HM layout is int32 (total_nz, diag_starts): beyond INT32_MAX the rung
+    // is an architectural N/A (t_hm = -1, speedup columns = -1)
+    float t_hm = -1.f;
+    if (C.nnz <= (size_t)INT32_MAX) {
     HMMatrix hA; hA.n=n; hA.num_diags=An; hA.diag_offsets=H.offsets; hA.diag_lengths=H.lengths; hA.values=H.values; hA.total_nz=H.nnz;
     hA.diag_starts.resize(Hs.size()); for(size_t i=0;i<Hs.size();++i) hA.diag_starts[i]=(int)Hs[i];
     HMMatrix hC=compute_c_hm_structure(hA,hA,n); std::vector<int> cLk=build_c_diag_lookup(hC,n);
     auto up=[&](void**p,const void*s,size_t b){CK(cudaMalloc(p,b));CK(cudaMemcpy(*p,s,b,cudaMemcpyHostToDevice));};
     float* hAv;int*hAo,*hAs,*hAl; up((void**)&hAv,hA.values.data(),hA.values.size()*4);up((void**)&hAo,hA.diag_offsets.data(),An*4);up((void**)&hAs,hA.diag_starts.data(),An*4);up((void**)&hAl,hA.diag_lengths.data(),An*4);
-    float* hCv;int*hCo,*hCs,*hCl,*hClk; CK(cudaMalloc(&hCv,hC.total_nz*4));
+    float* hCv;int*hCo,*hCs,*hCl,*hClk; CK(cudaMalloc(&hCv,(size_t)hC.total_nz*4));
     up((void**)&hCo,hC.diag_offsets.data(),hC.num_diags*4);up((void**)&hCs,hC.diag_starts.data(),hC.num_diags*4);up((void**)&hCl,hC.diag_lengths.data(),hC.num_diags*4);up((void**)&hClk,cLk.data(),cLk.size()*4);
     int nzA=hA.total_nz, hmblk=(nzA+255)/256;
     auto launch_hm=[&](){ hm_structured_sparse_matmul_kernel<<<hmblk,256>>>(hAv,hAo,hAs,hAl,An,hAv,hAo,hAs,hAl,An,hCv,hCo,hCs,hCl,hC.num_diags,hClk,nzA,n); };
-    CK(cudaMemset(hCv,0,hC.total_nz*4)); launch_hm(); CK(cudaGetLastError()); CK(cudaDeviceSynchronize());
-    float t_hm=tms([&](){CK(cudaMemset(hCv,0,hC.total_nz*4)); launch_hm();},3,iters);
+    CK(cudaMemset(hCv,0,(size_t)hC.total_nz*4)); launch_hm(); CK(cudaGetLastError()); CK(cudaDeviceSynchronize());
+    t_hm=tms([&](){CK(cudaMemset(hCv,0,(size_t)hC.total_nz*4)); launch_hm();},3,iters);
+    } else fprintf(stderr,"# L0 hm skipped: C nnz %zu exceeds HM int32 layout\n",(size_t)C.nnz);
 
     // ---- verify (full C: meta vs flat; sym upper vs flat's dc>=0) ----
     double d_mf=maxdiff(C_meta,C_f1), d_f14=maxdiff(C_f1,C_f4);
@@ -145,7 +150,7 @@ int main(int argc,char**argv){
         for(int k=0;k<Csn;++k){ int dc=Cs.offsets[k]; auto it=foff.find(dc); if(it==foff.end())continue;
             for(int p=0;p<Cs.lengths[k];++p) d_sym=std::max(d_sym,(double)std::fabs(C_sym[Cs.starts[k]+p]-C_f4[it->second+p])); } }
 
-    auto sp_=[&](float b){ return b>0? t_hm/b : -1; };
+    auto sp_=[&](float b){ return (b>0 && t_hm>0)? t_hm/b : -1; };
     if(!csv){
         printf("=== SpMSpM ablation  file=%s  n=%d  Hd=%d  nnz(C)=%zu ===\n",argv[1],n,An,C.nnz);
         printf("[verify] meta-vs-flat=%.1e flat1-vs-flat4=%.1e sym-upper-vs-flat=%.1e\n",d_mf,d_f14,d_sym);
