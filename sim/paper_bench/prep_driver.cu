@@ -106,6 +106,50 @@ int main(int argc, char** argv){
         cudaFree(drp); cudaFree(doff); cudaFree(dv); if(d8)cudaFree(d8); if(d16)cudaFree(d16);
     }
 
+    /* ---- didx_sym (MAINLINE symmetric mode, 2026-08-01): upper diagonals
+     * stored once, dual-position reads, 1B slot|side meta.  Runs only when
+     * H is numerically symmetric and Dup fits the 7-bit slot. ---- */
+    {
+        bool symok = true; int Dup = 0;
+        std::unordered_map<int,int> ix; for (int i=0;i<nd;++i) ix[H.offsets[i]]=i;
+        for (int i=0;i<nd && symok;++i){ int d=H.offsets[i]; if (d<0) continue;
+            if (d>0){ auto it=ix.find(-d); if (it==ix.end()){ symok=false; break; }
+                const float* a=&H.values[H.starts[i]]; const float* b=&H.values[H.starts[it->second]];
+                for (int p=0;p<H.lengths[i];++p) if (a[p]!=b[p]){ symok=false; break; } }
+            ++Dup; }
+        if (symok && Dup > 128) symok = false;
+        if (!symok) fprintf(stderr, "# didx_sym skipped: non-symmetric or Dup>128\n");
+        else {
+            auto t0 = clk::now();
+            std::vector<int> upOff; std::vector<long long> upSt; std::vector<int> upLen;
+            for (int i=0;i<nd;++i) if (H.offsets[i]>=0){ upOff.push_back(H.offsets[i]);
+                upSt.push_back((long long)H.starts[i]); upLen.push_back(H.lengths[i]); }
+            std::vector<int> rp2(n+1, 0);
+            for (int s=0;s<Dup;++s){ const int d=upOff[s]; const size_t st=(size_t)upSt[s]; const int len=upLen[s];
+                for (int p=0;p<len;++p){ if (H.values[st+p]==0.f) continue;
+                    ++rp2[p+1]; if (d>0) ++rp2[p+d+1]; } }
+            for (int r=0;r<n;++r) rp2[r+1]+=rp2[r];
+            std::vector<unsigned char> smeta((size_t)rp2[n]);
+            { std::vector<int> cur(rp2.begin(), rp2.end()-1);
+              for (int s=0;s<Dup;++s){ const int d=upOff[s]; const size_t st=(size_t)upSt[s]; const int len=upLen[s];
+                for (int p=0;p<len;++p){ if (H.values[st+p]==0.f) continue;
+                    smeta[cur[p]++]=(unsigned char)s;
+                    if (d>0) smeta[cur[p+d]++]=(unsigned char)(s|128); } } }
+            auto t1 = clk::now();
+            int* drp2=dupload(rp2); unsigned char* dm=dupload(smeta);
+            int* dou=dupload(upOff); long long* dsu=dupload(upSt);
+            float* dvf=dupload(H.values);
+            CUDA_CHECK(cudaDeviceSynchronize());
+            auto t2 = clk::now();
+            const size_t smem = (size_t)Dup*12;
+            int blocks2 = (n + TPB - 1)/TPB;
+            auto l=[&](){ spmv_didx_sym_kernel<<<blocks2,TPB,smem>>>(n,Dup,drp2,dm,dou,dsu,dvf,dX,dY); };
+            l(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+            row("spmv","didx_sym", ms_between(t0,t1), ms_between(t1,t2), tms(l,10,iters));
+            cudaFree(drp2);cudaFree(dm);cudaFree(dou);cudaFree(dsu);cudaFree(dvf);
+        }
+    }
+
     /* ---- stream (gather) ---- (off by default 2026-08-01: dropped from the
      * paper's variant set; PREP_ALL_VARIANTS=1 re-enables for old ablations) */
     if (getenv("PREP_ALL_VARIANTS")) {

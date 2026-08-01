@@ -89,6 +89,34 @@ template<class F> static float tms(F f, int wu, int it){
     return ms / it;
 }
 
+
+/* symmetric didx: upper diagonals stored once, each row reads v_d at two
+ * positions (+d term and mirror); 1B meta = 7-bit upper slot | side bit.
+ * Promoted to the MAINLINE SpMV symmetric mode (2026-08-01). */
+__global__ static void spmv_didx_sym_kernel(int n, int Dup,
+    const int* __restrict__ rp, const unsigned char* __restrict__ meta,
+    const int* __restrict__ offs_up, const long long* __restrict__ starts_up,
+    const float* __restrict__ val,
+    const float* __restrict__ X, float* __restrict__ Y)
+{
+    extern __shared__ char smraw[];
+    long long* sst = (long long*)smraw;
+    int*       soff = (int*)(smraw + Dup * 8);
+    for (int k = threadIdx.x; k < Dup; k += blockDim.x){ sst[k] = starts_up[k]; soff[k] = offs_up[k]; }
+    __syncthreads();
+    const int r = blockIdx.x * blockDim.x + threadIdx.x;
+    if (r >= n) return;
+    float acc = 0.f;
+    const int e = rp[r + 1];
+    for (int j = rp[r]; j < e; ++j) {
+        const unsigned char m = meta[j];
+        const int s = m & 127, side = m >> 7;
+        const int d = soff[s];
+        acc += val[sst[s] + (side ? r - d : r)] * X[side ? r - d : r + d];
+    }
+    Y[r] = acc;
+}
+
 template<typename T> static T* dupload(const std::vector<T>& h){
     T* d; CUDA_CHECK(cudaMalloc(&d, h.size()*sizeof(T)));
     CUDA_CHECK(cudaMemcpy(d, h.data(), h.size()*sizeof(T), cudaMemcpyHostToDevice));

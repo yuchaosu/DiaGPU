@@ -35,15 +35,16 @@ echo "host=$(hostname) $(date -Is)"; nvidia-smi --query-gpu=name,memory.total --
 
 echo "== build ($ARCH -> $BIN) =="
 NV="nvcc -O3 -std=c++17 -arch=$ARCH --expt-relaxed-constexpr"
+NVML="-lnvidia-ml"
 ( cd "$PB" && \
   $NV prep_driver.cu   "$REPO/spmspm/paper_hm_kernel.cu" -o "$BIN/prep_driver"   -lcusparse -lnvidia-ml && \
   $NV spmspm_driver.cu "$REPO/spmspm/paper_hm_kernel.cu" -o "$BIN/spmspm_driver" -lcusparse -lnvidia-ml -Xcompiler -fopenmp && \
-  $NV spmv_driver.cu -o "$BIN/spmv_driver" -lcusparse && \
-  $NV e2e_driver.cu  -o "$BIN/e2e_driver"  -lcusparse && \
-  $NV cusparse_fix_bench.cu -o "$BIN/cusparse_fix_bench" -lcusparse && \
-  $NV spgemm_bench.cu       -o "$BIN/spgemm_bench"       -lcusparse && \
-  $NV didx_sym_bench.cu     -o "$BIN/didx_sym_bench" && \
-  $NV amort_bench.cu        -o "$BIN/amort_bench"    -lcusparse ) || { echo build_fail; exit 3; }
+  $NV spmv_driver.cu -o "$BIN/spmv_driver" -lcusparse -lnvidia-ml && \
+  $NV e2e_driver.cu  -o "$BIN/e2e_driver"  -lcusparse -lnvidia-ml && \
+  $NV cusparse_fix_bench.cu -o "$BIN/cusparse_fix_bench" -lcusparse -lnvidia-ml && \
+  $NV spgemm_bench.cu       -o "$BIN/spgemm_bench"       -lcusparse -lnvidia-ml && \
+  $NV didx_sym_bench.cu     -o "$BIN/didx_sym_bench" -lnvidia-ml && \
+  $NV amort_bench.cu        -o "$BIN/amort_bench"    -lcusparse -lnvidia-ml ) || { echo build_fail; exit 3; }
 
 # ---- stage 1: REPS x full pipeline ----------------------------------------
 PC=$B/prep_a100_paperset.csv;   [ -f $PC ] || echo "# $(date -Is) A100 $ARCH iters=$ITERS PREPCSV,..." > $PC

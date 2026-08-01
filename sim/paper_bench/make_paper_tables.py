@@ -30,8 +30,10 @@ def spread(xs): return (max(xs) - min(xs)) / med(xs) if len(xs) > 1 and med(xs) 
 
 # ---------- collect ----------
 didx = collections.defaultdict(list)          # m -> [ms]
+dsym = collections.defaultdict(list)          # m -> [ms]  (mainline symmetric mode)
 meta = {}                                     # m -> (n, D)
-for f in ["prep_h100_268657.csv", "prep_h100_c29resume.csv", "prep_h100_c29patch.csv"]:
+for f in ["prep_h100_268657.csv", "prep_h100_c29resume.csv", "prep_h100_c29patch.csv",
+          "spmv_variants_h100.csv"]:
     p = os.path.join(B, f)
     if not os.path.exists(p): continue
     for r in csv.reader(open(p)):
@@ -39,6 +41,8 @@ for f in ["prep_h100_268657.csv", "prep_h100_c29resume.csv", "prep_h100_c29patch
         m = matkey(r[1])
         if r[4] == "spmv" and r[5] == "didx":
             didx[m].append(float(r[8])); meta[m] = (int(r[2]), int(r[3]))
+        if r[4] == "spmv" and r[5] == "didx_sym":
+            dsym[m].append(float(r[8])); meta.setdefault(m, (int(r[2]), int(r[3])))
 
 cusp_spmv = collections.defaultdict(list); cusp_cfg = {}
 for r in csv.reader(open(os.path.join(B, "cusparse_fix_h100.csv"))):
@@ -93,17 +97,22 @@ rows = []
 for m in sorted(PAPER):
     if m not in didx: continue
     dm = med(didx[m]); n, D = meta[m]
+    sm = med(dsym[m]) if dsym[m] else float("nan")
+    # MAINLINE (2026-08-01): didx_sym on symmetric H, didx otherwise
+    ours = sm if sm == sm else dm
+    mode = "didx_sym" if sm == sm else "didx"
     cu = med(cusp_spmv[m]) if cusp_spmv[m] else float("nan")
     dl = sweep.get(m, {}).get("drawloom", float("nan"))
     dq = sweep.get(m, {}).get("diaq_fp32", float("nan"))
-    rows.append([m, n, D, fc.get(m, ""), f"{dm:.6f}", f"{spread(didx[m]):.3f}", len(didx[m]),
+    rows.append([m, n, D, fc.get(m, ""), mode, f"{ours:.6f}", f"{dm:.6f}",
+                 f"{sm:.6f}" if sm == sm else "N/A", f"{spread(didx[m]):.3f}", len(didx[m]),
                  cusp_cfg.get(m, ""), f"{cu:.6f}", f"{spread(cusp_spmv[m]):.3f}",
-                 f"{cu/dm:.2f}" if cu == cu else "",
+                 f"{cu/ours:.2f}" if cu == cu else "",
                  f"{dl:.6f}" if dl == dl else "", f"{dq:.6f}" if dq == dq else ""])
 w("spmv_main.csv",
-  ["matrix", "n", "D", "f_C", "didx_ms_med", "didx_spread", "reps",
-   "cusparse_cfg", "cusparse_ms_med", "cusparse_spread", "speedup_vs_cusparse",
-   "drawloom_dasp_ms", "diaq_fp32_ms"], rows)
+  ["matrix", "n", "D", "f_C", "ours_mode", "ours_ms_med", "didx_ms_med", "didx_sym_ms_med",
+   "didx_spread", "reps", "cusparse_cfg", "cusparse_ms_med", "cusparse_spread",
+   "speedup_vs_cusparse", "drawloom_dasp_ms", "diaq_fp32_ms"], rows)
 
 rows = []
 for m in sorted(PAPER):

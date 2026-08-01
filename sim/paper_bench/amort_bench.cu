@@ -10,6 +10,7 @@
 #include "../dia_io.hpp"
 #include "common.cuh"
 #include <cusparse.h>
+#include <unordered_map>
 #include <chrono>
 #define CUSP_CHECK(x) do{cusparseStatus_t s=(x); if(s!=CUSPARSE_STATUS_SUCCESS){fprintf(stderr,"cuSPARSE %s:%d %d\n",__FILE__,__LINE__,(int)s);exit(1);}}while(0)
 using clk2 = std::chrono::steady_clock;
@@ -35,6 +36,7 @@ int main(int argc, char** argv){
       CUDA_CHECK(cudaDeviceSynchronize());
       cudaFree(rp);cudaFree(of);cudaFree(v); if(s8)cudaFree(s8); if(s16)cudaFree(s16); }
 
+    if (!getenv("AMORT_SYM_ONLY"))
     for (long N : Ns) {                                   /* ---- didx ---- */
         auto t0 = clk2::now();
         DidxPlan P = build_didx_plan(n, H.offsets, H.starts, H.lengths, H.values);
@@ -49,6 +51,43 @@ int main(int argc, char** argv){
         printf("AMORTCSV,%s,didx,%ld,%.3f\n", argv[1], N, msb(t0, clk2::now()));
         cudaFree(rp);cudaFree(of);cudaFree(v); if(s8)cudaFree(s8); if(s16)cudaFree(s16);
     }
+
+    /* ---- didx_sym (mainline symmetric mode): plan+upload+N*kernel ---- */
+    {
+        bool symok = true; int Dup = 0;
+        { std::unordered_map<int,int> ix; for (int i=0;i<D;++i) ix[H.offsets[i]]=i;
+          for (int i=0;i<D && symok;++i){ int d=H.offsets[i]; if (d<0) continue;
+              if (d>0){ auto it=ix.find(-d); if (it==ix.end()){ symok=false; break; }
+                  const float* a=&H.values[H.starts[i]]; const float* b=&H.values[H.starts[it->second]];
+                  for (int p=0;p<H.lengths[i];++p) if (a[p]!=b[p]){ symok=false; break; } }
+              ++Dup; } }
+        if (symok && Dup > 128) symok = false;
+        if (!symok) fprintf(stderr, "# didx_sym arm skipped (non-symmetric or Dup>128)\n");
+        else for (long N : Ns) {
+            auto t0 = clk2::now();
+            std::vector<int> upOff; std::vector<long long> upSt; std::vector<int> upLen;
+            for (int i=0;i<D;++i) if (H.offsets[i]>=0){ upOff.push_back(H.offsets[i]);
+                upSt.push_back((long long)H.starts[i]); upLen.push_back(H.lengths[i]); }
+            std::vector<int> rp2(n+1,0);
+            for (int s2=0;s2<Dup;++s2){ int d=upOff[s2]; size_t st=(size_t)upSt[s2]; int len=upLen[s2];
+                for (int p=0;p<len;++p){ if (H.values[st+p]==0.f) continue; ++rp2[p+1]; if (d>0) ++rp2[p+d+1]; } }
+            for (int r=0;r<n;++r) rp2[r+1]+=rp2[r];
+            std::vector<unsigned char> mt((size_t)rp2[n]);
+            { std::vector<int> cur(rp2.begin(), rp2.end()-1);
+              for (int s2=0;s2<Dup;++s2){ int d=upOff[s2]; size_t st=(size_t)upSt[s2]; int len=upLen[s2];
+                for (int p=0;p<len;++p){ if (H.values[st+p]==0.f) continue;
+                    mt[cur[p]++]=(unsigned char)s2; if (d>0) mt[cur[p+d]++]=(unsigned char)(s2|128); } } }
+            int* drp2=dupload(rp2); unsigned char* dm=dupload(mt);
+            int* dou=dupload(upOff); long long* dsu=dupload(upSt); float* dvf=dupload(H.values);
+            for (long i=0;i<N;++i)
+                spmv_didx_sym_kernel<<<blocks,TPB,(size_t)Dup*12>>>(n,Dup,drp2,dm,dou,dsu,dvf,dX,dY);
+            CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
+            printf("AMORTCSV,%s,didx_sym,%ld,%.3f\n", argv[1], N, msb(t0, clk2::now()));
+            cudaFree(drp2);cudaFree(dm);cudaFree(dou);cudaFree(dsu);cudaFree(dvf);
+        }
+    }
+
+    if (getenv("AMORT_SYM_ONLY")) return 0;
     for (long N : Ns) {                                   /* ---- cusparse ---- */
         auto t0 = clk2::now();
         CsrHost csr = dia_to_csr(H);

@@ -33,31 +33,7 @@ static double msb(clk2::time_point a, clk2::time_point b){
 #define TPB 256
 #endif
 
-__global__ void spmv_didx_sym_kernel(int n, int Dup,
-    const int* __restrict__ rp, const unsigned char* __restrict__ meta,
-    const int* __restrict__ offs_up, const long long* __restrict__ starts_up,
-    const float* __restrict__ val,
-    const float* __restrict__ X, float* __restrict__ Y)
-{
-    extern __shared__ char smraw[];
-    long long* sst = (long long*)smraw;            /* Dup x 8B */
-    int*       soff = (int*)(smraw + Dup * 8);     /* Dup x 4B */
-    for (int k = threadIdx.x; k < Dup; k += blockDim.x){ sst[k] = starts_up[k]; soff[k] = offs_up[k]; }
-    __syncthreads();
-    const int r = blockIdx.x * blockDim.x + threadIdx.x;
-    if (r >= n) return;
-    float acc = 0.f;
-    const int e = rp[r + 1];
-    for (int j = rp[r]; j < e; ++j) {
-        const unsigned char m = meta[j];
-        const int s = m & 127, side = m >> 7;
-        const int d = soff[s];
-        const int p = side ? r - d : r;            /* position in diagonal d */
-        const int c = side ? r - d : r + d;        /* x column */
-        acc += val[sst[s] + p] * X[c];
-    }
-    Y[r] = acc;
-}
+/* kernel now lives in common.cuh (mainline) */
 
 static double maxrel(const std::vector<double>& ref, const std::vector<float>& y){
     double mr = 0, nrm = 0;
