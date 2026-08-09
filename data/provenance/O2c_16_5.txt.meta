@@ -1,0 +1,13 @@
+build_time_s 42.521006
+n 65536
+num_qubits 16
+num_pauli_terms 1176
+num_diagonals 1243
+nnz 13959168
+n_taylor 5
+h1_norm 3.769968e+01
+final_time 1.2
+num_timesteps 1000
+dt 0.0012
+max_abs_imag 0.000000e+00
+has_imag 0
