@@ -1,0 +1,8 @@
+/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_18_5.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_20_5.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/bhD1_18_7.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/fermiFH_18_4.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcutR_18_3.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcutK_18_4.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcutC_18_4.txt
+/mnt/beegfs/ysu34/hamlib/dia_e2e/vibbf3_18_3.txt

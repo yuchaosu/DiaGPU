@@ -3,3 +3,9 @@ test_diag
 test_diag_debug
 *.pdf
 EXAMPLE.md
+*.csv
+*.md
+*.out
+*.png
+*.sh
+*.slurm
