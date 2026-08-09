@@ -51,12 +51,14 @@ int main(int argc, char** argv){
 
     /* symmetry precheck: H[-d] must equal H[+d] elementwise */
     { std::unordered_map<int,int> ix; for (int i=0;i<D;++i) ix[H.offsets[i]]=i;
-      double md=0;
+      double md=0, vmax=0;
+      for (float v : H.values) vmax = std::max(vmax, (double)std::fabs(v));
       for (int i=0;i<D;++i){ int d=H.offsets[i]; if (d<=0) continue;
           auto it=ix.find(-d); if (it==ix.end()){ fprintf(stderr,"NOT SYMMETRIC (missing -%d)\n",d); return 3; }
           const float* a=&H.values[H.starts[i]]; const float* b=&H.values[H.starts[it->second]];
           for (int p=0;p<H.lengths[i];++p) md=std::max(md,(double)std::fabs(a[p]-b[p])); }
-      if (md > 0){ fprintf(stderr,"NOT NUMERICALLY SYMMETRIC (maxdiff %.3e)\n",md); return 3; } }
+      /* rounding-tolerant: <=1e-6 relative is below the fp32 kernel's eps */
+      if (md > 1e-6*vmax){ fprintf(stderr,"NOT NUMERICALLY SYMMETRIC (maxdiff %.3e)\n",md); return 3; } }
 
     std::vector<float> x((size_t)n);
     for (int i = 0; i < n; ++i)

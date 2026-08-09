@@ -55,12 +55,16 @@ int main(int argc, char** argv){
     /* ---- didx_sym (mainline symmetric mode): plan+upload+N*kernel ---- */
     {
         bool symok = true; int Dup = 0;
+        /* rounding-tolerant check, same as prep_driver (BH_20_7: 7e-16 diff) */
         { std::unordered_map<int,int> ix; for (int i=0;i<D;++i) ix[H.offsets[i]]=i;
+          double smd = 0, svmax = 0;
+          for (float v : H.values) svmax = std::max(svmax, (double)std::fabs(v));
           for (int i=0;i<D && symok;++i){ int d=H.offsets[i]; if (d<0) continue;
               if (d>0){ auto it=ix.find(-d); if (it==ix.end()){ symok=false; break; }
                   const float* a=&H.values[H.starts[i]]; const float* b=&H.values[H.starts[it->second]];
-                  for (int p=0;p<H.lengths[i];++p) if (a[p]!=b[p]){ symok=false; break; } }
-              ++Dup; } }
+                  for (int p=0;p<H.lengths[i];++p) smd=std::max(smd,(double)std::fabs(a[p]-b[p])); }
+              ++Dup; }
+          if (symok && smd > 1e-6*svmax) symok = false; }
         if (symok && Dup > 128) symok = false;
         if (!symok) fprintf(stderr, "# didx_sym arm skipped (non-symmetric or Dup>128)\n");
         else for (long N : Ns) {
@@ -87,7 +91,7 @@ int main(int argc, char** argv){
         }
     }
 
-    if (getenv("AMORT_SYM_ONLY")) return 0;
+    if (getenv("AMORT_SYM_ONLY") || getenv("OURS_ONLY")) return 0;   /* baselines below */
     for (long N : Ns) {                                   /* ---- cusparse ---- */
         auto t0 = clk2::now();
         CsrHost csr = dia_to_csr(H);

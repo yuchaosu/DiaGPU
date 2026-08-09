@@ -116,7 +116,7 @@ int main(int argc, char** argv){
     }
 
     /* ---- cuSPARSE: N x (workEstimation + compute + copy), fresh each round */
-    if (getenv("SYM_ONLY")) return 0;
+    if (getenv("SYM_ONLY") || getenv("OURS_ONLY")) return 0;   /* cusparse below */
     CsrHost csr = dia_to_csr(H);
     int *drp = dupload(csr.row_ptr), *dci = dupload(csr.col_idx); float* dv = dupload(csr.vals);
     cusparseHandle_t hd; CUSP_CHECK(cusparseCreate(&hd));

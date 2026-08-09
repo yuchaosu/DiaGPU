@@ -93,6 +93,29 @@ static DiaHost load_dia(const char* path) {
     std::sort(tmp.begin(), tmp.end(),
               [](const Tmp& a, const Tmp& b){ return a.off < b.off; });
 
+    // DIA_TRIM=<tau>: relative magnitude trim at load (ablation tier A0,
+    // 2026-08-01). Zeroes |v| < tau*max|H| and drops emptied diagonals; a
+    // matrix with nothing below tau loads bit-identically. Every consumer
+    // (ours AND the baselines via dia_to_csr true-nonzero) sees the same
+    // trimmed operator, so the comparison stays level.
+    if (const char* ts = std::getenv("DIA_TRIM")) {
+        const double tau = std::atof(ts);
+        if (tau > 0) {
+            float vmax = 0.f;
+            for (auto& t : tmp) for (float v : t.vals) vmax = std::max(vmax, std::fabs(v));
+            const float thr = (float)(tau * vmax);
+            std::vector<Tmp> kept;
+            for (auto& t : tmp) {
+                bool any = false;
+                for (auto& v : t.vals) { if (std::fabs(v) < thr) v = 0.f; else any = true; }
+                if (any) kept.push_back(std::move(t));
+            }
+            if (kept.size() != tmp.size())
+                std::fprintf(stderr, "# DIA_TRIM %g: D %zu -> %zu\n", tau, tmp.size(), kept.size());
+            tmp = std::move(kept);
+        }
+    }
+
     size_t off = 0;
     for (auto& t : tmp) {
         H.offsets.push_back(t.off);

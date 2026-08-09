@@ -135,8 +135,11 @@ int main(int argc, char** argv){
         auto ls1=[&](){ spmv_tile_kernel<4,1><<<T.ntiles,TPB>>>(dAv,dS,dfp,dfi,dpp,dpi,dX,n,dY); };
         lv1(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
         row("ours_gopt_nv1", tms(lv1,10,iters), check1());
-        lv2(); CUDA_CHECK(cudaDeviceSynchronize());
-        row("ours_gopt_nv2", tms(lv2,10,iters), check2());
+        /* NV=2 reads plane v=1 as float4 from X+n: needs n%4==0 */
+        if (n % 4 == 0) {
+            lv2(); CUDA_CHECK(cudaDeviceSynchronize());
+            row("ours_gopt_nv2", tms(lv2,10,iters), check2());
+        } else fprintf(stderr, "# gopt_nv2 skipped: n%%4!=0 (float4 plane stride)\n");
         ls1(); CUDA_CHECK(cudaDeviceSynchronize());
         row("ours_gopt_s_nv1", tms(ls1,10,iters), check1());
         fprintf(stderr, "# gopt plan: %zu segs, reads %.1f%% of stored band\n",
@@ -186,8 +189,10 @@ int main(int argc, char** argv){
             auto l2=[&](){ spmv_tile_vec4_kernel<2><<<T.ntiles,TPB>>>(dAv,dS,dfp,dfi,dpp,dpi,dX,n,dY); };
             l1(); CUDA_CHECK(cudaGetLastError()); CUDA_CHECK(cudaDeviceSynchronize());
             row("ours_auto_nv1", tms(l1,10,iters), check1());
-            l2(); CUDA_CHECK(cudaDeviceSynchronize());
-            row("ours_auto_nv2", tms(l2,10,iters), check2());
+            if (n % 4 == 0) {
+                l2(); CUDA_CHECK(cudaDeviceSynchronize());
+                row("ours_auto_nv2", tms(l2,10,iters), check2());
+            } else fprintf(stderr, "# auto_nv2 skipped: n%%4!=0 (float4 plane stride)\n");
             cudaFree(dAv);cudaFree(dS);cudaFree(dfp);cudaFree(dfi);cudaFree(dpp);cudaFree(dpi);
         } else {
             DidxPlan P = build_didx_plan(n, H.offsets, H.starts, H.lengths, H.values);
@@ -250,7 +255,7 @@ int main(int argc, char** argv){
     }
 
     /* ---- cuSPARSE CSR fp32 (ALG2), single vector ---- */
-    {
+    if (!std::getenv("OURS_ONLY")) {
         CsrHost csr = dia_to_csr(H);
         int *drp = dupload(csr.row_ptr), *dci = dupload(csr.col_idx);
         float *dv = dupload(csr.vals);
@@ -300,8 +305,10 @@ int main(int argc, char** argv){
         cudaFree(dAr);cudaFree(dAi);cudaFree(dxr);cudaFree(dxi);
         cudaFree(dIdx);cudaFree(dOf);cudaFree(dLe);cudaFree(dyr);cudaFree(dyi);
     };
-    run_diaq(double(0), "diaq_fp64");
-    run_diaq(float(0),  "diaq_fp32");
+    if (!std::getenv("OURS_ONLY")) {
+        run_diaq(double(0), "diaq_fp64");
+        run_diaq(float(0),  "diaq_fp32");
+    }
 
     return 0;
 }

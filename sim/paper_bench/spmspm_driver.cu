@@ -136,7 +136,10 @@ int main(int argc, char** argv){
         double m = 0; for (size_t i = 0; i < C.nnz; ++i) m = std::max(m, (double)std::fabs((double)g[i] - (double)C_flat[i])); return m; };
 
     /* ---------------- HM atomic-scatter (Haque et al.) ---------------- */
-    if (C.nnz > (size_t)INT32_MAX) {
+    /* OURS_ONLY=1 (trim-ablation): baselines not executed */
+    if (std::getenv("OURS_ONLY")) {
+        /* skip */
+    } else if (C.nnz > (size_t)INT32_MAX) {
         /* HM layout (total_nz, diag_starts) is int32 — architectural N/A */
         fprintf(stderr, "# hm_atomic skipped: C nnz %zu exceeds HM int32 layout\n", (size_t)C.nnz);
     } else {
@@ -217,12 +220,14 @@ int main(int argc, char** argv){
     };
     /* fp64 arm removed from the standard run (2026-08-01): the paper reports
      * diaq fp32 only; re-enable via DIAQ_FP64=1 for accuracy cross-checks */
-    if (getenv("DIAQ_FP64")) run_diaq(double(0), "diaq_fp64");
-    run_diaq(float(0),  "diaq_fp32");
+    if (!getenv("OURS_ONLY")) {
+        if (getenv("DIAQ_FP64")) run_diaq(double(0), "diaq_fp64");
+        run_diaq(float(0),  "diaq_fp32");
+    }
     cudaFree(dHv); cudaFree(dCs); cudaFree(dClen);
 
     /* ---------------- cuSPARSE SpGEMM fp32 (time-only) ---------------- */
-    if (do_cusp) {
+    if (do_cusp && !getenv("OURS_ONLY")) {
         CsrHost csr = dia_to_csr(H);
         int *drp=dupload(csr.row_ptr), *dci=dupload(csr.col_idx); float* dv=dupload(csr.vals);
         cusparseHandle_t hd; CUSP_CHECK(cusparseCreate(&hd));
