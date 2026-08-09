@@ -1,0 +1,79 @@
+== Lin: n=256000 D=7 K=6 tau=1e-08 guard=20.0GB
+  EXACT k=2: D=25 stored=6309594 nnz=6221600 max=3.306e+05 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=25 stored=6309594 nnz=6221600 max=3.306e+05 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=63 stored=15792948 nnz=15467992 max=2.264e+08 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=63 stored=15792948 nnz=15467992 max=2.264e+08 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=4: D=129 stored=32123180 nnz=31253544 max=1.663e+11 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=4: D=129 stored=32123180 nnz=31253544 max=1.663e+11 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=5: D=231 stored=57143170 nnz=55229376 max=1.290e+14 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=5: D=231 stored=57143170 nnz=55229376 max=1.290e+14 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=6: D=377 stored=92644598 nnz=88951328 max=1.045e+17 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=6: D=377 stored=92644598 nnz=88951328 max=1.045e+17 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+== Lin done
+== heis_16_5: n=65536 D=31 K=5 tau=1e-08 guard=20.0GB
+  EXACT k=2: D=397 stored=24330226 nnz=2497616 max=9.610e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=397 stored=24330226 nnz=2497616 max=9.610e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=2735 stored=161636466 nnz=7783504 max=2.979e+04 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=2735 stored=161636466 nnz=7783504 max=2.979e+04 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=4: D=11143 stored=633343090 nnz=18888204 max=9.235e+05 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=4: D=11143 stored=633343090 nnz=18888204 max=9.235e+05 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=5: D=28297 stored=1541796978 nnz=37955368 max=2.863e+07 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=5: D=28297 stored=1541796978 nnz=37955368 max=2.863e+07 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+== heis_16_5 done
+== tfim_16_5: n=65536 D=33 K=5 tau=1e-08 guard=20.0GB
+  EXACT k=2: D=455 stored=26181618 nnz=8950976 max=2.410e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=455 stored=26181618 nnz=8950976 max=2.410e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=3421 stored=182763634 nnz=45294208 max=4.035e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=3421 stored=182763634 nnz=45294208 max=4.035e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+Traceback (most recent call last):
+  File "hk_magnitude_census.py", line 112, in <module>
+    main()
+  File "hk_magnitude_census.py", line 96, in main
+    Pn = dia_mul(P, H, n, membytes)
+  File "hk_magnitude_census.py", line 43, in dia_mul
+    else:       acc[-oi:]    += a[-oi:] * b[:n + oi]
+ValueError: operands could not be broadcast together with shapes (0,) (32768,) 
+== qmaxcut_16_4: n=65536 D=31 K=5 tau=1e-08 guard=20.0GB
+  EXACT k=2: D=241 stored=14090202 nnz=3997696 max=1.781e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=241 stored=14090202 nnz=3997696 max=1.781e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=2789 stored=102727482 nnz=15179776 max=6.867e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=2789 stored=102727482 nnz=15179776 max=6.867e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+Traceback (most recent call last):
+  File "hk_magnitude_census.py", line 112, in <module>
+    main()
+  File "hk_magnitude_census.py", line 96, in main
+    Pn = dia_mul(P, H, n, membytes)
+  File "hk_magnitude_census.py", line 43, in dia_mul
+    else:       acc[-oi:]    += a[-oi:] * b[:n + oi]
+ValueError: operands could not be broadcast together with shapes (0,) (32773,) 
+== tfim_16_5: n=65536 D=33 K=5 tau=1e-08 guard=25.0GB
+  EXACT k=2: D=455 stored=26181618 nnz=8950976 max=2.410e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=455 stored=26181618 nnz=8950976 max=2.410e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=3421 stored=182763634 nnz=45294208 max=4.035e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=3421 stored=182763634 nnz=45294208 max=4.035e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=4: D=15439 stored=759094386 nnz=162782976 max=6.959e+04 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=4: D=15439 stored=759094386 nnz=162782976 max=6.959e+04 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=5: D=43909 stored=1965870194 nnz=444377760 max=1.227e+06 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=5: D=43909 stored=1965870194 nnz=444377760 max=1.227e+06 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+== tfim_16_5 done
+== qmaxcut_16_4: n=65536 D=31 K=5 tau=1e-08 guard=25.0GB
+  EXACT k=2: D=241 stored=14090202 nnz=3997696 max=1.781e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=2: D=241 stored=14090202 nnz=3997696 max=1.781e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=3: D=2789 stored=102727482 nnz=15179776 max=6.867e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=3: D=2789 stored=102727482 nnz=15179776 max=6.867e+01 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=4: D=8663 stored=446798980 nnz=48726016 max=3.182e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=4: D=8663 stored=446798980 nnz=48726016 max=3.182e+02 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+  EXACT k=5: D=40371 stored=1510952730 nnz=110227456 max=1.254e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=5: D=40371 stored=1510952730 nnz=110227456 max=1.254e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=0.00e+00
+== qmaxcut_16_4 done
+== bh_16_5: n=65536 D=167 K=4 tau=1e-08 guard=25.0GB
+  EXACT k=2: D=6983 stored=353264192 nnz=13224291 max=1.024e+03 dust<1e-6:0.797 <1e-8:0.797 <1e-12:0.797 dropdiag=6328(0.896)
+  TRIM  k=2: D=655 stored=36830956 nnz=2685008 max=1.024e+03 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000) err_rel=1.56e-17
+  EXACT k=3: memory guard tripped (projected diagonals exceed 25.0GB) — exact chain stops
+  TRIM  k=3: D=4377 stored=226419180 nnz=8639326 max=3.277e+04 dust<1e-6:0.000 <1e-8:0.000 <1e-12:0.000 dropdiag=0(0.000)
+  TRIM  k=4: memory guard tripped — trimmed chain stops
+== bh_16_5 done
+== O2_16_5: n=65536 D=1243 K=3 tau=1e-08 guard=25.0GB
+  EXACT k=2: memory guard tripped (projected diagonals exceed 25.0GB) — exact chain stops
+  TRIM  k=2: memory guard tripped — trimmed chain stops
+== O2_16_5 done

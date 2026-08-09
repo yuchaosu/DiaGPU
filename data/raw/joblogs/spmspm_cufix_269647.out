@@ -1,0 +1,11 @@
+host=c29 2026-08-01T03:00:20-04:00
+== BH_24_8
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),BH_24_8.txt
+== O2_20_5
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),O2_20_5.txt
+== O2_20_8
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),O2_20_8.txt
+== DONE: 351 rows

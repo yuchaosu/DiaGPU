@@ -1,0 +1,969 @@
+host=c29 2026-07-30T23:39:38-04:00
+NVIDIA H100 NVL
+== build (sm_90a) ==
+seeded /mnt/beegfs/ysu34/paper_bench/prep_h100_done.txt with 24 matrices from job 268657
+== stage 1: prep resume -> /mnt/beegfs/ysu34/paper_bench/prep_h100_c29resume.csv ==
+== prep BH_20_7 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,didx,219.258,4.122,0.086506,2582
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,stream,0.001,14.388,0.195610,74
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,gopt,284.732,9.505,0.129850,2266
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,csr_zskip,1013.352,6.627,0.118307,8621
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,cusparse_csr,477.280,29.918,0.606149,837
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_flat,28.931,2.001,44.662289,1
+CUDA prep_driver.cu:261 out of memory
+SKIP(rc=1),BH_20_7.txt
+== prep BH_24_8 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,didx,5269.225,72.254,2.002067,2668
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,stream,0.006,293.451,3.786291,78
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,gopt,6411.318,159.574,1.878728,3498
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,csr_zskip,20545.899,118.075,2.878618,7178
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2483027996) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE prep_driver.cu:180 3
+SKIP(rc=1),BH_24_8.txt
+== prep O2_16_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,didx,60.521,1.077,0.035092,1755
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,stream,0.003,7.402,0.179428,41
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,gopt,101.554,3.867,0.312995,337
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,csr_zskip,125.058,1.509,0.028763,4400
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,cusparse_csr,315.370,15.928,0.239169,1385
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmspm,ours_flat,1138.219,3.209,153.099197,7
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),O2_16_5.txt
+== prep O2_16_7 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,didx,63.810,1.093,0.035077,1850
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,stream,0.004,7.406,0.179334,41
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,gopt,100.419,3.867,0.312535,334
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,csr_zskip,119.377,1.472,0.028703,4210
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,cusparse_csr,315.370,15.910,0.240653,1377
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmspm,ours_flat,1134.486,3.256,154.353790,7
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),O2_16_7.txt
+== prep O2_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,didx,3113.655,34.510,2.253774,1397
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,stream,0.009,313.841,4.761477,66
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,gopt,3847.037,111.254,1.785426,2217
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,csr_zskip,7075.213,48.914,1.672238,4260
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE prep_driver.cu:180 3
+SKIP(rc=1),O2_20_5.txt
+== prep O2_20_8 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,didx,3169.335,35.233,2.262109,1417
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,stream,0.007,321.816,4.733222,68
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,gopt,3918.920,112.772,1.786263,2257
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,csr_zskip,7079.806,48.009,1.649795,4320
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE prep_driver.cu:180 3
+SKIP(rc=1),O2_20_8.txt
+== prep heis_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,didx,62.553,2.028,0.032092,2012
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,stream,0.002,4.757,0.065189,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,gopt,77.845,3.347,0.044558,1822
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,csr_zskip,402.171,3.177,0.040960,9896
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,cusparse_csr,97.450,10.203,0.199612,539
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_flat,3.673,0.513,4.393813,1
+CUDA prep_driver.cu:261 out of memory
+SKIP(rc=1),heis_20_5.txt
+== prep heis_20_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,didx,62.614,2.027,0.032098,2014
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,stream,0.001,4.753,0.065304,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,gopt,75.045,3.299,0.044729,1752
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,csr_zskip,408.233,3.061,0.040965,10040
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,cusparse_csr,99.271,10.242,0.200093,547
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmspm,ours_flat,3.682,0.523,4.401557,1
+CUDA prep_driver.cu:261 out of memory
+SKIP(rc=1),heis_20_6.txt
+== prep heis_22_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,didx,291.946,7.644,0.118946,2519
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,stream,0.001,20.396,0.248524,82
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,gopt,348.501,12.469,0.151531,2382
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,csr_zskip,1786.354,12.071,0.165175,10888
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,cusparse_csr,444.158,41.746,0.871272,558
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmspm,ours_flat,17.281,1.235,24.494204,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_22_5.txt
+== prep heis_22_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,didx,282.202,7.510,0.119158,2431
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,stream,0.001,20.207,0.249014,81
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,gopt,330.771,12.418,0.151644,2263
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,csr_zskip,1801.848,12.161,0.162930,11134
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,cusparse_csr,443.500,41.880,0.875993,554
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmspm,ours_flat,16.446,1.276,24.555574,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_22_6.txt
+== prep heis_24_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,didx,1363.180,31.671,0.528691,2638
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,stream,0.003,86.301,1.121906,77
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,gopt,1662.017,49.912,0.600538,2851
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,csr_zskip,7439.211,50.330,0.738493,10142
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,cusparse_csr,2040.801,176.333,4.159431,533
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmspm,ours_flat,84.788,5.085,122.501396,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_24_5.txt
+== prep heis_24_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,didx,1365.610,31.466,0.527300,2649
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,stream,0.006,86.355,1.120554,77
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,gopt,1671.726,49.610,0.600699,2866
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,csr_zskip,7555.850,51.437,0.733866,10366
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,cusparse_csr,2051.915,178.198,4.140166,539
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmspm,ours_flat,82.578,5.146,122.994293,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_24_6.txt
+== prep qmaxcut_10_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmv,didx,0.030,0.027,0.003681,15
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmv,stream,0.001,0.017,0.004160,4
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmv,gopt,0.041,0.033,0.007208,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmv,csr_zskip,0.115,0.021,0.003667,37
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmv,cusparse_csr,0.020,0.353,0.011973,31
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmspm,ours_flat,0.047,0.030,0.007713,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmspm,hm_atomic,0.074,0.048,0.015819,8
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmspm,ours_sym,0.009,0.028,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,spmspm,ours_sym,0.009,0.028,0.014282,3
+== prep qmaxcut_12_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmv,didx,0.096,0.036,0.004051,32
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmv,stream,0.001,0.023,0.004524,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmv,gopt,0.127,0.040,0.006732,25
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmv,csr_zskip,0.517,0.031,0.003971,138
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmv,cusparse_csr,0.094,0.391,0.012652,38
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmspm,ours_flat,0.083,0.070,0.011002,14
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmspm,hm_atomic,0.375,0.099,0.018851,25
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmspm,ours_sym,0.013,0.031,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,spmspm,ours_sym,0.013,0.031,0.020658,2
+== prep qmaxcut_14_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmv,didx,0.389,0.057,0.004012,111
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmv,stream,0.000,0.056,0.004673,12
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmv,gopt,0.476,0.071,0.007373,74
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmv,csr_zskip,2.200,0.064,0.003937,575
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmv,cusparse_csr,0.421,0.464,0.013158,67
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmspm,ours_flat,0.160,0.074,0.024504,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmspm,hm_atomic,1.998,0.174,0.027075,80
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmspm,ours_sym,0.028,0.079,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,spmspm,ours_sym,0.028,0.079,0.024712,4
+== prep qmaxcut_16_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmv,didx,1.652,0.184,0.004621,397
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmv,stream,0.001,0.172,0.005460,32
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmv,gopt,2.042,0.170,0.007980,277
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmv,csr_zskip,10.933,0.286,0.005043,2225
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmv,cusparse_csr,2.870,0.707,0.020612,174
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmspm,ours_flat,0.268,0.137,0.074177,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmspm,hm_atomic,10.510,0.514,0.093585,118
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmspm,ours_sym,0.072,0.147,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,spmspm,ours_sym,0.072,0.147,0.034308,6
+== prep qmaxcut_18_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmv,didx,7.597,0.561,0.008796,927
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmv,stream,0.001,0.610,0.010380,59
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmv,gopt,9.015,0.568,0.008994,1065
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmv,csr_zskip,48.227,0.858,0.009900,4958
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmv,cusparse_csr,11.281,1.878,0.037462,351
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmspm,ours_flat,0.667,0.175,0.357349,2
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmspm,hm_atomic,49.511,1.116,0.435757,116
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmspm,ours_sym,0.277,0.224,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,spmspm,ours_sym,0.277,0.224,0.149659,3
+== prep qmaxcut_20_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmv,didx,41.309,2.027,0.032638,1328
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmv,stream,0.001,2.706,0.048253,56
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmv,gopt,43.532,2.320,0.030621,1497
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmv,csr_zskip,320.262,3.005,0.042731,7565
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmv,cusparse_csr,59.483,6.171,0.111571,588
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmspm,ours_flat,2.489,0.337,1.903510,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmspm,hm_atomic,258.348,3.660,2.518089,104
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmspm,ours_sym,1.206,0.621,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,spmspm,ours_sym,1.206,0.621,0.844403,2
+== prep tfim_10_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmv,didx,0.036,0.030,0.003676,18
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmv,stream,0.001,0.018,0.004090,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmv,gopt,0.059,0.034,0.009962,9
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmv,csr_zskip,0.216,0.026,0.003724,65
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmv,cusparse_csr,0.027,0.353,0.011610,33
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmspm,ours_flat,0.054,0.031,0.007726,11
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmspm,hm_atomic,0.107,0.048,0.017828,9
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmspm,ours_sym,0.009,0.029,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,spmspm,ours_sym,0.009,0.029,0.018842,2
+== prep tfim_12_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmv,didx,0.159,0.044,0.003687,55
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmv,stream,0.001,0.030,0.004446,7
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmv,gopt,0.243,0.049,0.010810,27
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmv,csr_zskip,0.893,0.040,0.003464,269
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmv,cusparse_csr,0.128,0.386,0.012445,41
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmspm,ours_flat,0.100,0.070,0.012988,13
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmspm,hm_atomic,0.609,0.107,0.020200,35
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmspm,ours_sym,0.016,0.070,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,spmspm,ours_sym,0.016,0.070,0.021613,4
+== prep tfim_14_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmv,didx,0.698,0.082,0.004156,187
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmv,stream,0.001,0.074,0.005510,14
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmv,gopt,1.191,0.127,0.011529,114
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmv,csr_zskip,3.967,0.258,0.004152,1018
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmv,cusparse_csr,0.946,0.523,0.014309,103
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmspm,ours_flat,0.207,0.078,0.045857,6
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmspm,hm_atomic,3.369,0.201,0.045210,79
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmspm,ours_sym,0.029,0.079,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,spmspm,ours_sym,0.029,0.079,0.030752,4
+== prep tfim_16_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmv,didx,3.211,0.292,0.004750,737
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmv,stream,0.001,0.267,0.005594,48
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmv,gopt,4.367,0.252,0.012615,366
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmv,csr_zskip,20.716,0.510,0.005014,4233
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmv,cusparse_csr,3.051,0.890,0.026132,151
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmspm,ours_flat,0.318,0.164,0.157505,3
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmspm,hm_atomic,17.059,0.706,0.219161,81
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmspm,ours_sym,0.094,0.160,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,spmspm,ours_sym,0.094,0.160,0.068875,4
+== prep tfim_16_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmv,didx,3.161,0.279,0.004917,700
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmv,stream,0.001,0.264,0.005721,46
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmv,gopt,4.378,0.255,0.012746,363
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmv,csr_zskip,21.185,0.492,0.005121,4233
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmv,cusparse_csr,3.044,0.899,0.026663,148
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmspm,ours_flat,0.310,0.141,0.157578,3
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmspm,hm_atomic,17.579,0.646,0.219610,83
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmspm,ours_sym,0.094,0.148,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,spmspm,ours_sym,0.094,0.148,0.069016,4
+== prep tfim_18_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmv,didx,16.019,0.909,0.011840,1430
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmv,stream,0.001,1.266,0.011661,109
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmv,gopt,18.427,1.188,0.013153,1491
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmv,csr_zskip,112.953,1.507,0.020385,5615
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmv,cusparse_csr,18.400,2.764,0.058956,359
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmspm,ours_flat,0.963,0.204,0.884049,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmspm,hm_atomic,85.888,1.738,1.481876,59
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmspm,ours_sym,0.398,0.306,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,spmspm,ours_sym,0.398,0.306,0.366622,2
+== prep tfim_18_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,didx,15.759,0.917,0.011960,1394
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,stream,0.001,1.208,0.011743,103
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,gopt,19.422,1.175,0.013267,1553
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,csr_zskip,111.894,1.495,0.021475,5280
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,cusparse_csr,18.829,2.753,0.059337,364
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_flat,0.978,0.208,0.884556,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,hm_atomic,86.190,1.804,1.481100,59
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_sym,0.411,0.336,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_sym,0.411,0.336,0.360678,2
+== prep tfim_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,didx,117.739,3.614,0.058446,2076
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,stream,0.001,4.936,0.067325,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,gopt,88.695,4.225,0.054953,1691
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,csr_zskip,552.810,5.549,0.083261,6706
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,cusparse_csr,85.830,10.219,0.203627,472
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmspm,ours_flat,3.850,0.386,4.724000,1
+CUDA prep_driver.cu:261 out of memory
+SKIP(rc=1),tfim_20_5.txt
+== prep tfim_22_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,didx,551.418,14.396,0.248425,2278
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,stream,0.001,20.506,0.264263,78
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,gopt,500.474,15.931,0.198444,2602
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,csr_zskip,2301.347,23.041,0.438962,5295
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,cusparse_csr,372.553,41.998,0.902982,459
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmspm,ours_flat,17.156,1.348,26.182837,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),tfim_22_5.txt
+== prep tfim_24_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,didx,2481.209,59.538,1.190186,2135
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,stream,0.008,87.377,1.182405,74
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,gopt,2301.814,65.463,0.815638,2902
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,csr_zskip,9671.490,97.892,1.777062,5497
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,cusparse_csr,2098.979,179.967,4.262016,535
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmspm,ours_flat,79.885,5.333,130.938782,1
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),tfim_24_5.txt
+== prep tfim_8_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmv,didx,0.012,0.030,0.003167,13
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmv,stream,0.001,0.014,0.003656,4
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmv,gopt,0.014,0.027,0.006732,6
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmv,csr_zskip,0.071,0.018,0.002966,30
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmv,cusparse_csr,0.006,0.360,0.010262,36
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmspm,ours_flat,0.034,0.029,0.006001,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmspm,hm_atomic,0.019,0.045,0.013199,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmspm,ours_sym,0.007,0.029,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,spmspm,ours_sym,0.007,0.029,0.006130,6
+== prep tsp_15_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmv,didx,0.121,0.045,0.003011,55
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmv,stream,0.001,0.019,0.002793,7
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmv,gopt,0.043,0.032,0.002922,26
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmv,csr_zskip,0.975,0.038,0.002716,373
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmv,cusparse_csr,0.063,0.362,0.014977,28
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmspm,ours_flat,0.027,0.028,0.003155,18
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmspm,hm_atomic,0.069,0.058,0.005380,24
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmspm,ours_sym,0.014,0.026,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,spmspm,ours_sym,0.014,0.026,0.004148,10
+== prep tsp_18_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmv,didx,0.997,0.207,0.003624,332
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmv,stream,0.001,0.097,0.003481,28
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmv,gopt,0.313,0.105,0.003288,127
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmv,csr_zskip,7.825,0.225,0.003393,2373
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmv,cusparse_csr,0.503,0.545,0.017011,62
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmspm,ours_flat,0.148,0.063,0.004764,44
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmspm,hm_atomic,0.508,0.195,0.006134,115
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmspm,ours_sym,0.092,0.064,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,spmspm,ours_sym,0.092,0.064,0.004447,35
+== prep tsp_8_4 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmv,didx,0.004,0.023,0.002696,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmv,stream,0.001,0.012,0.002451,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmv,gopt,0.003,0.025,0.002727,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmv,csr_zskip,0.009,0.017,0.002433,11
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmv,cusparse_csr,0.002,0.355,0.008653,41
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmspm,ours_flat,0.005,0.027,0.002792,11
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmspm,hm_atomic,0.002,0.040,0.004138,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmspm,ours_sym,0.001,0.026,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,spmspm,ours_sym,0.001,0.026,0.002834,10
+== prep flowmeter0 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmv,didx,6.301,0.075,0.004541,1404
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmv,stream,0.002,0.921,0.063146,15
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmv,gopt,5.718,0.357,0.100823,60
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmv,csr_zskip,5.136,0.061,0.003893,1335
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmv,cusparse_csr,26.700,2.504,0.038464,759
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmspm,ours_flat,18.425,0.882,9.472724,2
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmspm,hm_atomic,19.486,1.373,16.071169,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,spmspm,ours_sym,3.611,0.517,-1.000000,-1
+CUDA prep_driver.cu:293 an illegal memory access was encountered
+== prep fv1 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmv,didx,0.216,0.050,0.003457,77
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmv,stream,0.001,0.029,0.003159,9
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmv,gopt,0.223,0.048,0.005674,48
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmv,csr_zskip,1.769,0.055,0.003249,562
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmv,cusparse_csr,0.119,0.388,0.012554,40
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmspm,ours_flat,0.024,0.031,0.005594,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmspm,hm_atomic,0.187,0.067,0.009537,27
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmspm,ours_sym,0.007,0.028,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,spmspm,ours_sym,0.007,0.028,0.011067,3
+== prep rdb5000 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmv,didx,0.083,0.037,0.003421,35
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmv,stream,0.000,0.021,0.003427,6
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmv,gopt,0.097,0.038,0.005405,25
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmv,csr_zskip,0.649,0.033,0.003287,207
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmv,cusparse_csr,0.050,0.371,0.012912,33
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmspm,ours_flat,0.018,0.029,0.004674,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmspm,hm_atomic,0.098,0.054,0.008622,18
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmspm,ours_sym,0.005,0.028,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,spmspm,ours_sym,0.005,0.028,0.009251,4
+== prep tols4000 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmv,didx,0.370,0.033,0.010491,38
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmv,stream,0.001,0.120,0.015671,8
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmv,gopt,0.357,0.037,0.040118,10
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmv,csr_zskip,0.422,0.027,0.007310,61
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmv,cusparse_csr,1.406,0.529,0.013204,147
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmspm,ours_flat,0.443,0.142,0.126381,5
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmspm,hm_atomic,0.975,0.190,0.183127,6
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmspm,ours_sym,0.160,0.140,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,spmspm,ours_sym,0.160,0.140,0.216949,1
+seeded /mnt/beegfs/ysu34/paper_bench/e2e_diaq_h100_done.txt with 6 matrices from job 268662 (BeH_12_6 excluded)
+== stage 2: e2e resume -> /mnt/beegfs/ysu34/paper_bench/e2e_diaq_h100_c29resume.csv ==
+== e2e BH_20_7 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,1000,7,didx,517.686,488.685,932.940,10151.417,10.881,7.527e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,1000,7,14.501,3187.621,3.417,7.391e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,2,5555,5108440242,43.592,45.134,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,3,98989,82073030294,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,7,2097151,1099511627776,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,7,1048576,549756338176,-1,-1,-1
+== e2e BH_24_8 [--sym] ==
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2483027996) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE e2e_driver.cu:195 3
+SKIP(rc=1),BH_24_8.txt
+== e2e BeH_12_6 [--sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,1000,6,didx,3.311,2.498,66.720,194.374,2.913,5.063e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,1000,6,0.206,559.345,8.383,4.619e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,2,5031,11437262,13.580,0.414,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,3,8191,16777216,218.952,4.651,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,6,8191,16777216,922.517,1067.000,1.157
+== e2e O2_16_5 [--sym] ==
+# opbuild(ours) truncated at k=2 (OOM, Cnnz=3840684748)
+CUDA e2e_driver.cu:563 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,1000,5,didx,165.751,323.381,245.013,2844.257,11.609,6.092e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,1000,5,7.716,3412.234,13.927,5.440e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,2,100975,3840684748,1125.043,153.728,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,3,131071,4294967296,64317.249,11703.650,-1
+SKIP(rc=1),O2_16_5.txt
+== e2e O2_16_7 [--sym] ==
+# opbuild(ours) truncated at k=2 (OOM, Cnnz=3840684748)
+CUDA e2e_driver.cu:563 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,1000,7,didx,165.571,328.985,343.729,4013.914,11.678,6.063e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,1000,7,7.772,4752.961,13.828,5.491e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,2,100975,3840684748,1127.163,154.674,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,3,131071,4294967296,64245.488,11621.954,-1
+SKIP(rc=1),O2_16_7.txt
+== e2e O2_20_5 [--sym] ==
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE e2e_driver.cu:195 3
+SKIP(rc=1),O2_20_5.txt
+== e2e O2_20_8 [--sym] ==
+ ** On entry to cusparseCreateCsr(): dimension mismatch for CUSPARSE_INDEX_32I, nnz (2885206540) + base (0) > INT32_MAX (2147483647)
+
+cuSPARSE e2e_driver.cu:195 3
+SKIP(rc=1),O2_20_8.txt
+== e2e fermi_10_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,1000,4,didx,0.162,0.406,23.910,104.539,4.372,1.682e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,1000,4,0.043,42.963,1.797,1.452e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,2,113,102554,0.027,0.007,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,3,393,330602,0.270,0.011,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,4,855,648042,2.130,2.498,1.173
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,4,428,324533,0.536,-1,-1
+== e2e fermi_12_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,1000,4,didx,0.413,0.542,25.930,112.593,4.342,1.903e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,1000,4,0.050,50.055,1.930,1.582e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,2,177,656322,0.062,0.011,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,3,793,2765826,0.793,0.042,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,4,2167,6966018,8.813,9.300,1.055
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,4,1084,3485057,1.218,-1,-1
+== e2e fermi_14_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,1000,5,didx,1.478,1.504,32.473,150.479,4.634,2.086e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,1000,5,0.168,69.733,2.147,1.860e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,2,257,3870866,0.168,0.037,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,3,1433,20514002,2.375,0.292,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,5,11167,136925392,262.312,272.835,1.040
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,5,5584,68470888,20.265,-1,-1
+== e2e fermi_16_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,1000,5,didx,5.910,5.186,38.738,256.149,6.612,2.150e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,1000,5,0.326,81.640,2.108,8.135e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,2,353,21513010,0.188,0.130,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,3,2377,138741682,5.204,1.351,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,5,27547,1419565488,1322.152,1477.052,1.117
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,5,13774,709815512,115.104,-1,-1
+== e2e fermi_8_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,1000,4,didx,0.123,0.373,21.356,88.264,4.133,1.239e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,1000,4,0.041,33.490,1.568,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,2,65,14310,0.015,0.005,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,3,169,33734,0.100,0.007,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,4,295,51590,0.632,0.820,1.297
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,4,148,25923,0.297,-1,-1
+== e2e heis_10_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,1000,5,didx,0.180,0.401,29.464,129.556,4.397,2.315e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,1000,5,0.045,55.842,1.895,2.156e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,2,135,123122,0.039,0.008,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,3,471,395890,0.396,0.013,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,5,1459,932976,8.172,8.566,1.048
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,5,730,467000,1.197,-1,-1
+== e2e heis_12_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,1000,5,didx,0.435,0.552,31.373,134.017,4.272,2.523e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,1000,5,0.052,63.641,2.029,2.321e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,2,207,771058,0.073,0.012,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,3,951,3324018,1.093,0.051,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,5,4527,12741744,57.287,59.068,1.031
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,5,2264,6372920,5.155,-1,-1
+== e2e heis_14_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,1000,5,didx,1.545,1.563,34.152,159.976,4.684,2.728e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,1000,5,0.161,74.563,2.183,2.561e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,2,295,4460530,0.225,0.043,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,3,1703,24453234,3.116,0.358,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,5,12779,155229296,366.830,381.938,1.041
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,5,6390,77622840,27.143,-1,-1
+== e2e heis_16_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,1000,5,didx,6.349,5.565,37.742,262.083,6.944,2.924e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,1000,5,0.314,82.295,2.180,2.728e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,2,399,24395762,0.221,0.148,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,3,2791,163414130,5.880,1.626,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,5,32167,1651448944,1468.902,1661.620,1.131
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,5,16084,825757240,149.796,-1,-1
+== e2e heis_18_5 [--sym] ==
+# opbuild(ours) truncated at k=2 (OOM, Cnnz=127991794)
+CUDA e2e_driver.cu:563 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,1000,5,didx,26.955,25.169,65.242,603.009,9.243,3.075e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,1000,5,1.132,178.950,2.743,2.886e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,2,519,127991794,0.722,0.840,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,3,4279,1016725618,13.435,11.993,-1
+SKIP(rc=1),heis_18_5.txt
+== e2e heis_20_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,1000,5,didx,144.998,110.442,239.764,2226.358,9.286,3.225e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,1000,5,4.732,764.049,3.187,3.042e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,2,655,650379250,4.059,4.611,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,3,6231,5988941938,58.441,80.473,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,5,148383,130519407728,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,5,74192,65260228152,-1,-1,-1
+== e2e heis_20_6 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,1000,6,didx,146.540,110.352,287.371,2665.291,9.275,3.223e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,1000,6,4.883,917.199,3.192,3.040e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,2,655,650379250,4.152,4.547,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,3,6231,5988941938,58.101,81.188,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,6,409911,337281752192,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,6,204956,168641400384,-1,-1,-1
+== e2e heis_22_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,1000,5,didx,657.600,486.225,1017.147,10265.544,10.092,3.365e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,1000,5,20.188,3479.189,3.421,3.178e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,2,807,3222274034,22.738,23.426,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,3,8711,33791410290,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,5,280411,1008470072432,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,5,140206,504237133368,-1,-1,-1
+== e2e heis_22_6 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,1000,6,didx,659.135,479.837,1240.487,12436.273,10.025,3.366e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,1000,6,20.311,4192.067,3.379,3.179e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,2,807,3222274034,21.775,23.652,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,3,8711,33791410290,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,6,916383,3121275149440,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,6,458192,1560639671872,-1,-1,-1
+== e2e heis_24_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,1000,5,didx,3053.774,2236.107,4732.696,47232.867,9.980,3.497e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,1000,5,87.307,16064.151,3.394,3.312e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,2,975,15640559602,104.859,123.163,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,3,11783,184171888754,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,5,496023,7258545069168,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,5,248012,3629280923192,-1,-1,-1
+== e2e heis_24_6 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,1000,6,didx,3075.534,2253.885,5689.416,56937.098,10.008,3.497e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,1000,6,85.919,19315.221,3.395,3.312e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,2,975,15640559602,103.842,123.239,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,3,11783,184171888754,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,6,1888887,26414770232448,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,6,944444,13207393504832,-1,-1,-1
+== e2e heis_8_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,1000,4,didx,0.111,0.371,23.493,95.479,4.064,2.222e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,1000,4,0.041,37.000,1.575,1.803e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,2,79,17458,0.016,0.006,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,3,199,39410,0.124,0.007,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,4,325,55346,0.658,0.852,1.294
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,4,163,27801,0.308,-1,-1
+== e2e maxcut_10_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1000,4,stream,0.086,0.389,20.112,96.558,4.801,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1000,4,0.029,20.950,1.042,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,2,1,1024,0.001,0.003,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,3,1,1024,0.000,0.003,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,4,1,1024,0.200,0.390,1.955
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,4,1,1024,0.229,-1,-1
+== e2e maxcut_12_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1000,4,stream,0.093,0.382,20.869,121.011,5.799,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1000,4,0.043,20.846,0.999,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,2,1,4096,0.001,0.003,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,3,1,4096,0.000,0.003,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,4,1,4096,0.213,0.421,1.977
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,4,1,4096,0.234,-1,-1
+== e2e maxcut_14_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1000,5,stream,0.123,0.464,26.032,160.145,6.152,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1000,5,0.042,27.199,1.045,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,2,1,16384,0.002,0.003,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,3,1,16384,0.001,0.003,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,5,1,16384,0.316,0.659,2.086
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,5,1,16384,0.320,-1,-1
+== e2e maxcut_16_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1000,5,stream,0.264,0.691,28.351,171.552,6.051,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1000,5,0.047,28.566,1.008,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,2,1,65536,0.001,0.005,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,3,1,65536,0.001,0.005,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,5,1,65536,0.519,1.416,2.729
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,5,1,65536,0.418,-1,-1
+== e2e maxcut_18_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1000,5,stream,0.750,1.856,35.365,184.326,5.212,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1000,5,0.112,34.765,0.983,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,2,1,262144,0.002,0.005,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,3,1,262144,0.001,0.005,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,5,1,262144,1.375,3.426,2.492
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,5,1,262144,0.886,-1,-1
+== e2e maxcut_20_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1000,5,stream,2.746,6.315,67.046,285.518,4.259,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1000,5,0.218,71.999,1.074,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,2,1,1048576,0.006,0.008,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,3,1,1048576,0.005,0.008,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,5,1,1048576,4.742,11.762,2.480
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,5,1,1048576,2.695,-1,-1
+== e2e qmaxcut_10_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,1000,4,didx,0.142,0.392,24.076,100.939,4.192,8.142e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,1000,4,0.043,44.121,1.833,3.384e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,2,181,89042,0.041,0.008,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,3,631,340390,0.624,0.011,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,4,1523,774104,4.778,5.734,1.200
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,4,762,387564,0.789,-1,-1
+== e2e qmaxcut_12_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,1000,4,didx,0.326,0.524,26.829,111.371,4.151,8.370e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,1000,4,0.047,50.740,1.891,4.397e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,2,265,520138,0.076,0.011,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,3,1167,2512768,1.487,0.032,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,4,3815,7717388,18.448,22.103,1.198
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,4,1908,3860742,1.920,-1,-1
+== e2e qmaxcut_14_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,1000,4,didx,0.960,1.127,26.926,116.035,4.309,9.163e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,1000,4,0.111,57.216,2.125,5.047e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,2,365,2867138,0.170,0.025,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,3,1951,16752466,3.500,0.200,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,4,8151,65768640,64.375,78.528,1.220
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,4,4076,32892512,5.844,-1,-1
+== e2e qmaxcut_16_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,1000,4,didx,3.847,3.781,30.667,177.252,5.780,9.889e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,1000,4,0.235,65.087,2.122,5.704e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,2,481,15138746,0.183,0.074,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,3,3031,103776028,6.324,0.734,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,4,15507,499792596,182.773,244.661,1.339
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,4,7754,249929066,22.037,-1,-1
+== e2e qmaxcut_18_4 [--sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,1000,4,didx,16.311,16.434,51.981,319.040,6.138,1.047e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,1000,4,0.721,99.361,1.911,6.257e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,2,613,77332402,0.511,0.360,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,3,4455,608304862,14.654,4.461,-1
+SKIP(rc=1),qmaxcut_18_4.txt
+== e2e qmaxcut_20_4 [--sym] ==
+# opbuild(ours) truncated at k=2 (OOM, Cnnz=384827306)
+CUDA e2e_driver.cu:563 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,1000,4,didx,87.618,70.219,196.913,1001.861,5.088,1.102e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,1000,4,2.796,414.039,2.103,6.784e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,2,761,384827306,1.983,2.089,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,3,6271,3415735960,41.776,29.627,-1
+SKIP(rc=1),qmaxcut_20_4.txt
+== e2e tfim_10_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,1000,4,didx,0.190,0.415,24.660,104.429,4.235,2.005e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,1000,4,0.045,47.700,1.934,1.710e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,2,167,138738,0.046,0.008,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,3,659,474224,0.589,0.014,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,4,1423,869504,4.772,5.283,1.107
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,4,712,435264,0.765,-1,-1
+== e2e tfim_12_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,1000,4,didx,0.484,0.564,24.811,107.715,4.341,2.153e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,1000,4,0.054,53.046,2.138,1.899e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,2,247,849906,0.095,0.013,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,3,1263,3870832,1.764,0.059,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,4,3647,9763968,21.253,22.774,1.072
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,4,1824,4884032,2.185,-1,-1
+== e2e tfim_14_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,1000,4,didx,1.740,1.584,28.888,129.485,4.482,2.291e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,1000,4,0.160,61.839,2.141,2.038e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,2,343,4841458,0.251,0.046,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,3,2171,27836528,4.395,0.408,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,4,8031,92109952,83.688,90.787,1.085
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,4,4016,46063168,7.119,-1,-1
+== e2e tfim_16_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,1000,4,didx,8.722,5.519,31.448,224.188,7.129,2.405e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,1000,4,0.312,69.095,2.197,2.204e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,2,455,26181618,0.273,0.158,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,3,3447,182780016,7.563,1.815,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,4,15727,759430272,219.036,279.642,1.277
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,4,7864,379747904,31.732,-1,-1
+== e2e tfim_16_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,1000,5,didx,8.954,5.676,38.468,279.078,7.255,2.403e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,1000,5,0.312,85.966,2.235,2.202e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,2,455,26181618,0.269,0.158,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,3,3447,182780016,7.643,1.814,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,5,45471,1968446464,2569.193,2914.142,1.134
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,5,22736,984256000,244.259,-1,-1
+== e2e tfim_18_4 [--sym] ==
+# opbuild(ours) truncated at k=2 (OOM, Cnnz=136183794)
+CUDA e2e_driver.cu:563 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,1000,4,didx,32.991,26.258,68.748,488.599,7.107,2.550e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,1000,4,1.155,148.694,2.163,2.346e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,2,583,136183794,0.820,0.919,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,3,5155,1121714288,18.502,13.380,-1
+SKIP(rc=1),tfim_18_4.txt
+== e2e tfim_18_5 [--sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,1000,5,didx,32.550,26.265,85.140,616.590,7.242,2.559e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,1000,5,1.176,187.580,2.203,2.343e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,2,583,136183794,0.822,0.914,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,3,5155,1121714288,18.724,13.422,-1
+SKIP(rc=1),tfim_18_5.txt
+== e2e tfim_20_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,1000,5,didx,205.351,109.937,415.375,2324.607,5.596,2.679e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,1000,5,4.923,812.761,1.957,2.462e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,2,727,687341554,4.410,4.859,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,3,7359,6535774320,65.828,89.734,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,5,198479,151712177152,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,5,99240,75856612864,-1,-1,-1
+== e2e tfim_22_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,1000,5,didx,1066.304,493.593,1976.837,10757.840,5.442,2.790e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,1000,5,20.603,3663.225,1.853,2.584e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,2,887,3386900466,22.426,25.324,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,3,10123,36553359472,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,5,365631,1157158149120,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,5,182816,578581171712,-1,-1,-1
+== e2e tfim_24_5 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,1000,5,didx,4807.532,2285.157,9122.905,48830.488,5.353,2.889e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,1000,5,89.368,16923.717,1.855,2.693e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,2,1063,16366174194,106.307,131.411,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,3,13511,197786599536,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,5,632383,8232445680640,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,5,316192,4116231228928,-1,-1,-1
+== e2e tfim_8_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,1000,4,didx,0.111,0.357,22.120,94.212,4.259,1.725e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,1000,4,0.041,39.161,1.770,1.324e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,2,103,20338,0.037,0.006,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,3,295,48496,0.193,0.008,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,4,463,63616,1.057,1.248,1.181
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,4,232,31936,0.352,-1,-1
+== e2e tsp_15_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1000,4,stream,0.168,0.517,21.324,131.713,6.177,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1000,4,0.044,21.938,1.029,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,2,1,32768,0.002,0.003,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,3,1,32768,0.001,0.003,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,4,1,32768,0.298,0.872,2.921
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,4,1,32768,0.278,-1,-1
+== e2e tsp_18_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1000,4,stream,0.738,1.871,29.979,151.634,5.058,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1000,4,0.111,29.242,0.975,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,2,1,262144,0.002,0.005,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,3,1,262144,0.001,0.005,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,4,1,262144,1.054,2.596,2.462
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,4,1,262144,0.696,-1,-1
+== e2e tsp_8_4 [--sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1000,4,stream,0.082,0.368,18.358,76.476,4.166,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1000,4,0.029,19.106,1.041,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,2,1,256,0.001,0.003,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,3,1,256,0.000,0.003,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,4,1,256,0.198,0.384,1.940
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,4,1,256,0.219,-1,-1
+== e2e flowmeter0 [full] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,1000,6,didx,13.513,29.685,41.296,471.368,11.414,6.139e-06
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,1000,6,1.038,2957.094,71.608,6.141e-06
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,2,3075,27355213,17.925,9.475,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,3,4957,41781523,90.262,44.109,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,6,10113,72214335,1282.850,2116.136,1.650
+== e2e fv1 [full] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,1000,6,stream,0.373,0.566,33.543,164.485,4.904,1.703e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,1000,6,0.050,47.020,1.402,1.433e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,2,25,237154,0.009,0.006,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,3,49,462352,0.017,0.009,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,6,169,1569526,1.051,2.625,2.498
+== e2e rdb5000 [full] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,1000,6,stream,0.218,0.451,35.052,161.741,4.614,1.002e-06
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,1000,6,0.044,42.610,1.216,1.014e-06
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,2,21,103580,0.005,0.005,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,3,43,210558,0.013,0.005,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,6,157,752644,0.848,1.727,2.036
+== e2e tols4000 [full] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,1000,6,stream,0.469,1.966,118.331,174.417,1.474,0.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,1000,6,0.167,392.844,3.320,0.000e+00
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,2,587,1297805,0.774,0.127,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,3,978,2032069,2.855,0.316,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,6,2049,4100000,37.275,40.072,1.075
+== stage 3: ncu shared-mem profile ==
+node=c29 gpu=NVIDIA H100 NVL arch=sm_90a out=/mnt/beegfs/ysu34/paper_bench
+NVIDIA (R) Nsight Compute Command Line Profiler
+== build (sm_90a) ==
+make: 'spmv_driver' is up to date.
+/home/ysu34/DiaGPU/sim/spmspm_ablation.cu(71): warning #177-D: variable "mblk" was declared but never referenced
+      { const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn); }
+                              ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/ysu34/DiaGPU/sim/spmspm_ablation.cu(71): warning #177-D: variable "mblk" was declared but never referenced
+      { const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn); }
+                              ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+== ncu shared-mem profile -> /mnt/beegfs/ysu34/paper_bench/ncu_shared_h100.csv ==
+  profiled heis_16_5
+  profiled tfim_16_5
+  profiled fermi_16_5
+  profiled qmaxcut_16_4
+  profiled O2_16_5
+== done: /mnt/beegfs/ysu34/paper_bench/ncu_shared_h100.csv (294 rows) ==
+== ALL DONE 2026-07-31T00:08:44-04:00 ==
+  prep rows:  268657=264  resume=272
+  e2e opbuild: 268662=11  resume=83
+patch host=c29 2026-07-31T00:14:07-04:00
+== stage 4: prep patch -> /mnt/beegfs/ysu34/paper_bench/prep_h100_c29patch.csv ==
+== prep BH_20_7 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,didx,230.199,4.107,0.086896,2696
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,stream,0.001,14.299,0.195655,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,gopt,289.838,9.420,0.129521,2311
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,csr_zskip,992.465,6.549,0.119170,8383
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,cusparse_csr,473.216,29.677,0.606056,830
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_flat,28.901,1.964,44.682884,1
+# hm_atomic skipped: C nnz 5108440242 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_sym,11.038,6.248,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_sym,11.038,6.248,19.836483,1
+== prep BH_24_8 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,didx,5261.782,72.516,2.015356,2647
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,stream,0.010,277.494,3.781447,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,gopt,6386.118,160.283,1.880489,3481
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,spmv,csr_zskip,20241.604,117.552,2.896578,7029
+# cusparse_csr skipped: H nnz 2483027996 > INT32_MAX
+CUDA prep_driver.cu:238 out of memory
+SKIP(rc=1),BH_24_8.txt
+== prep O2_16_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,didx,66.149,1.132,0.035008,1922
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,stream,0.004,7.459,0.179254,42
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,gopt,104.422,3.861,0.312751,346
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,csr_zskip,123.309,1.453,0.028600,4362
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmv,cusparse_csr,312.651,15.821,0.239208,1373
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmspm,ours_flat,1142.594,3.254,152.939819,7
+# hm_atomic skipped: C nnz 3840684748 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,spmspm,ours_sym,54.348,4.894,-1.000000,-1
+CUDA prep_driver.cu:310 an illegal memory access was encountered
+SKIP(rc=1),O2_16_5.txt
+== prep O2_16_7 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,didx,66.618,1.155,0.034934,1940
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,stream,0.003,7.516,0.179343,42
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,gopt,105.017,3.937,0.312534,349
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,csr_zskip,120.476,1.493,0.028808,4234
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmv,cusparse_csr,318.872,15.859,0.240004,1395
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmspm,ours_flat,1133.722,3.255,154.426422,7
+# hm_atomic skipped: C nnz 3840684748 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,spmspm,ours_sym,50.977,4.824,-1.000000,-1
+CUDA prep_driver.cu:310 an illegal memory access was encountered
+SKIP(rc=1),O2_16_7.txt
+== prep O2_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,didx,3400.162,35.365,2.252586,1525
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,stream,0.008,323.164,4.744268,68
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,gopt,4127.559,113.371,1.778148,2385
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,spmv,csr_zskip,6874.607,48.484,1.656714,4179
+# cusparse_csr skipped: H nnz 2885206540 > INT32_MAX
+CUDA prep_driver.cu:238 out of memory
+SKIP(rc=1),O2_20_5.txt
+== prep O2_20_8 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,didx,3388.422,35.242,2.267954,1510
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,stream,0.009,320.133,4.749452,67
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,gopt,4130.962,112.500,1.774376,2392
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_8.txt,1048576,3359,spmv,csr_zskip,6837.671,48.070,1.668589,4127
+# cusparse_csr skipped: H nnz 2885206540 > INT32_MAX
+CUDA prep_driver.cu:238 out of memory
+SKIP(rc=1),O2_20_8.txt
+== prep heis_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,didx,64.657,2.043,0.032000,2084
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,stream,0.001,4.825,0.065155,74
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,gopt,80.117,3.330,0.044559,1873
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,csr_zskip,411.000,3.196,0.040879,10132
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,cusparse_csr,100.959,10.317,0.199768,557
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_flat,4.150,0.499,4.367347,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,hm_atomic,433.199,5.939,7.305676,60
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,1.774,0.955,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,1.774,0.955,1.897942,1
+== prep heis_20_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,didx,65.696,1.983,0.031983,2116
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,stream,0.001,4.727,0.065146,73
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,gopt,78.946,3.282,0.044632,1842
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,csr_zskip,414.212,3.048,0.040967,10185
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmv,cusparse_csr,101.598,10.176,0.199027,562
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmspm,ours_flat,3.708,0.513,4.374433,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmspm,hm_atomic,434.176,5.946,7.307027,60
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmspm,ours_sym,1.969,0.948,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,spmspm,ours_sym,1.969,0.948,1.897811,2
+== prep heis_22_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,didx,301.659,7.668,0.118957,2600
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,stream,0.001,20.072,0.248945,81
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,gopt,354.047,12.307,0.151777,2414
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,csr_zskip,1781.515,12.022,0.163380,10978
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmv,cusparse_csr,442.279,41.396,0.877933,551
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmspm,ours_flat,16.441,1.247,24.498896,1
+# hm_atomic skipped: C nnz 3222274034 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmspm,ours_sym,7.821,3.284,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,spmspm,ours_sym,7.821,3.284,10.892618,1
+== prep heis_22_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,didx,300.072,7.635,0.118355,2600
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,stream,0.001,20.014,0.248213,81
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,gopt,356.423,12.258,0.151716,2430
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,csr_zskip,1798.849,12.070,0.161663,11202
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmv,cusparse_csr,443.220,41.277,0.876475,553
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmspm,ours_flat,16.638,1.394,24.583376,1
+# hm_atomic skipped: C nnz 3222274034 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmspm,ours_sym,8.554,3.336,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,spmspm,ours_sym,8.554,3.336,10.470855,1
+== prep heis_24_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,didx,1350.361,31.679,0.528668,2614
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,stream,0.004,87.185,1.120755,78
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,gopt,1689.340,50.018,0.600843,2895
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,csr_zskip,7543.187,50.620,0.739026,10275
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmv,cusparse_csr,2088.411,177.694,4.156679,545
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmspm,ours_flat,77.536,5.186,122.781960,1
+# hm_atomic skipped: C nnz 15640559602 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmspm,ours_sym,40.546,15.711,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,spmspm,ours_sym,40.546,15.711,55.109581,1
+== prep heis_24_6 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,didx,1353.142,31.185,0.529335,2615
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,stream,0.005,85.456,1.121432,76
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,gopt,1662.350,49.276,0.600780,2849
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,csr_zskip,7549.707,51.190,0.735695,10332
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmv,cusparse_csr,2040.467,176.789,4.162940,533
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmspm,ours_flat,84.856,5.297,123.131004,1
+# hm_atomic skipped: C nnz 15640559602 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmspm,ours_sym,36.546,33.941,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,spmspm,ours_sym,36.546,33.941,55.299072,1
+== prep tfim_20_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,didx,121.193,3.593,0.058381,2137
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,stream,0.002,4.981,0.067327,74
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,gopt,88.487,4.187,0.054979,1686
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,csr_zskip,548.614,5.558,0.082552,6713
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmv,cusparse_csr,102.177,10.527,0.203246,555
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmspm,ours_flat,3.918,0.544,4.763840,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmspm,hm_atomic,456.149,6.110,7.720071,60
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmspm,ours_sym,1.864,1.040,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,spmspm,ours_sym,1.864,1.040,2.039856,1
+== prep tfim_22_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,didx,565.567,14.440,0.249684,2323
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,stream,0.003,20.453,0.265742,77
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,gopt,498.790,15.917,0.198113,2598
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,csr_zskip,2263.403,23.540,0.437978,5222
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmv,cusparse_csr,372.542,41.513,0.903383,458
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmspm,ours_flat,17.353,1.431,26.311989,1
+# hm_atomic skipped: C nnz 3386900466 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmspm,ours_sym,8.150,3.484,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,spmspm,ours_sym,8.150,3.484,12.039289,1
+== prep tfim_24_5 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,didx,2534.965,60.579,1.165126,2228
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,stream,0.008,88.879,1.181531,75
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,gopt,2265.634,66.615,0.814892,2862
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,csr_zskip,9471.889,97.874,1.774703,5392
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmv,cusparse_csr,2087.523,180.504,4.273367,531
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmspm,ours_flat,80.520,5.358,131.044998,1
+# hm_atomic skipped: C nnz 16366174194 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmspm,ours_sym,38.665,53.863,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,spmspm,ours_sym,38.665,53.863,58.715431,2
+== stage 5: e2e patch -> /mnt/beegfs/ysu34/paper_bench/e2e_diaq_h100_c29patch.csv ==
+== e2e BH_24_8 [L4-sym] ==
+# cusparse arm skipped: H nnz 2483027996 > INT32_MAX
+# opbuild wall: Unnz=281474976710656 (int32 index limit)
+# opbuild(sym) wall: Unnz=140737496743936 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,1000,8,didx,11744.294,0.000,24343.262,-1.000,-1.000,-1.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,1000,8,293.960,81373.656,3.343,7.715e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,155,2,8871,134080011442,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,8,33554431,281474976710656,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_24_8.txt,16777216,8,16777216,140737496743936,-1,-1,-1
+== e2e O2_16_5 [L4-sym] ==
+# opbuild wall: Unnz=4294967296 (int32 index limit)
+# opbuild(sym) wall: Unnz=2147516416 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,1000,5,didx,167.813,325.522,248.744,2845.167,11.438,6.092e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,1000,5,7.700,3404.839,13.688,5.440e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,2,100975,3840684748,1128.514,154.372,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,3,131071,4294967296,63935.958,11719.305,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,5,131071,4294967296,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,5,65536,2147516416,-1,-1,-1
+== e2e O2_16_7 [L4-sym] ==
+# opbuild wall: Unnz=4294967296 (int32 index limit)
+# opbuild(sym) wall: Unnz=2147516416 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,1000,7,didx,168.191,324.404,346.185,4022.395,11.619,6.063e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,1000,7,7.671,4769.217,13.776,5.491e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,2,100975,3840684748,1125.641,154.996,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,3,131071,4294967296,64018.501,11695.092,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,7,131071,4294967296,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,7,65536,2147516416,-1,-1,-1
+== e2e O2_20_5 [L4-sym] ==
+# cusparse arm skipped: H nnz 2885206540 > INT32_MAX
+# opbuild wall: Unnz=1099511627776 (int32 index limit)
+# opbuild(sym) wall: Unnz=549756338176 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,1000,5,gopt,4271.417,0.000,10990.678,-1.000,-1.000,-1.000e+00
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,1000,5,319.390,50052.539,4.554,9.188e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,3359,2,937217,625833635896,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,5,2097151,1099511627776,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_20_5.txt,1048576,5,1048576,549756338176,-1,-1,-1
+== e2e O2_20_8 [L4-sym] ==
+# cusparse arm skipped: H nnz 2885206540 > INT32_MAX
+host=c29 2026-07-31T02:36:36-04:00
+NVIDIA H100 NVL
+interactive run still active (2026-07-31T02:36:37-04:00); waiting 10 min
+interactive run still active (2026-07-31T02:46:37-04:00); waiting 10 min
+interactive run still active (2026-07-31T02:56:37-04:00); waiting 10 min
+interactive run still active (2026-07-31T03:06:37-04:00); waiting 10 min
+interactive run still active (2026-07-31T03:16:37-04:00); waiting 10 min
+host=c29 2026-07-31T03:17:56-04:00
+NVIDIA H100 NVL
+== build (patched drivers, sm_90a) ==
+== stage A: prep completeness ==
+== stage B: e2e completeness ==
+== e2e O2_20_8 [L4-sym] ==
+# cusparse arm skipped: H nnz 2885206540 > INT32_MAX

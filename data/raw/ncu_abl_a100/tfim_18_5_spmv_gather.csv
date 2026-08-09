@@ -1,0 +1,23 @@
+==PROF== Connected to process 1842093 (/home/ysu34/DiaGPU/sim/paper_bench/bin_sm80/prep_driver)
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,didx,43.708,2.569,0.088064,525
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,didx_sym,11.490,3.622,0.084651,179
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,stream,0.001,3.696,0.087040,42
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,gopt,26.755,3.035,0.086357,345
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,csr_zskip,210.175,4.217,0.092843,2309
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmv,cusparse_csr,70.830,5.219,0.335189,227
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_flat,2.166,0.639,1.469781,2
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,hm_atomic,55.848,4.294,2.995883,20
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_sym,0.907,2.769,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,spmspm,ours_sym,0.907,2.769,0.704171,5
+==PROF== Disconnected from process 1842093
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_read.sum","byte","38,085,376"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_write.sum","byte","2,327,552"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed","%","49.29"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","gpu__time_duration.sum","ns","42,400"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_red.sum","","0"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_sector_hit_rate.pct","%","35.12"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","32.18"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","23.71"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","28.35"
+"0","1842093","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(256, 1, 1)","0","8.0","Command line profiler metrics","smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct","%","77.28"

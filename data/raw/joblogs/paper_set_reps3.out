@@ -1,0 +1,14 @@
+host=c29 2026-08-01T05:02:13-04:00 reps=3
+== [1] BH_20_7 ==
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,didx,231.631,4.105,0.087364,2698
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,gopt,301.536,9.511,0.129703,2398
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmv,cusparse_csr,473.216,7.097,0.130316,3686
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_flat,43.040,2.008,44.567867,1
+# hm_atomic skipped: C nnz 5108440242 exceeds HM int32 layout
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_sym,14.634,12.473,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,spmspm,ours_sym,14.634,12.473,22.354748,1
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,5555,5108440242,ours_flat,45.220619,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,5555,5108440242,ours_sym,22.201942,7.629e-06
+# hm_atomic skipped: C nnz 5108440242 exceeds HM int32 layout
+# diaq_fp32 skipped: C nnz 5108440242 exceeds diaq u32 layout
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,5555,5108440242,cusparse_spgemm,97.248016,-1.000e+00

@@ -1,0 +1,18 @@
+== vibbf3_18_3: n=262144 D=12 K=5
+   input: file D=12  trim(1e-06) D=12
+   U[exact-chain(file)]: diags=209 nnz=11554144  after 1000 applies: infid=2.66e-15 state_relerr=4.92e-14
+   U[trim-input]: diags=173 nnz=9355264  after 1000 applies: infid=2.22e-15 state_relerr=4.92e-14
+   U[trim-input+chain(1e-08)]: diags=173 nnz=9355264  after 1000 applies: infid=2.22e-15 state_relerr=4.92e-14
+== vibbf3_18_3 done
+== bh_16_5: n=65536 D=167 K=5
+   input: file D=167  trim(1e-06) D=43
+   U[exact-chain(file)]: INFEASIBLE (> 40000 diagonals at some power)
+   U[trim-input]: diags=23097 nnz=63947867  after 1000 applies: infid=4.44e-16 state_relerr=3.56e-14
+   U[trim-input+chain(1e-08)]: diags=23097 nnz=63846888  after 1000 applies: infid=4.44e-16 state_relerr=3.56e-14
+== bh_16_5 done
+== O2_16_5: n=65536 D=1243 K=5
+   input: file D=1243  trim(1e-06) D=867
+   U[exact-chain(file)]: INFEASIBLE (> 40000 diagonals at some power)
+   U[trim-input]: INFEASIBLE (> 40000 diagonals at some power)
+   U[trim-input+chain(1e-08)]: INFEASIBLE (> 40000 diagonals at some power)
+== O2_16_5 done

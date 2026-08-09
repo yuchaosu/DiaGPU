@@ -1,0 +1,23 @@
+==PROF== Connected to process 1821303 (/home/ysu34/DiaGPU/sim/paper_bench/bin_sm80/prep_driver)
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,didx,123.356,5.074,0.095573,1344
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,didx_sym,47.618,12.355,0.096256,623
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,stream,0.002,14.857,0.153600,97
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,gopt,97.272,7.661,0.101035,1039
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,csr_zskip,652.232,7.189,0.101717,6483
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,cusparse_csr,284.582,9.327,0.320853,916
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_flat,8.013,1.092,6.954325,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,hm_atomic,275.125,13.756,14.209706,20
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,3.970,3.888,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,3.970,3.888,3.534165,2
+==PROF== Disconnected from process 1821303
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_read.sum","byte","167,935,616"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_write.sum","byte","4,825,984"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed","%","71.73"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","gpu__time_duration.sum","ns","124,512"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_red.sum","","0"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_sector_hit_rate.pct","%","32.32"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","40.40"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","33.45"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","77.30"
+"0","1821303","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(1024, 1, 1)","0","8.0","Command line profiler metrics","smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct","%","70.09"

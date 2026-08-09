@@ -1,0 +1,4 @@
+== H8c_16_4: n=65536 D=8887 K=4
+   TRIMEVOL,H8c_16_4,tau=1e-06,D=6921/8887,infid=2.749e-13,state_relerr=5.287e-07
+   TRIMEVOL,H8c_16_4,tau=1e-08,D=6921/8887,infid=6.439e-15,state_relerr=6.254e-10
+== H8c_16_4 done

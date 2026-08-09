@@ -1,0 +1,7 @@
+# 2026-08-01T04:58:36-04:00 external triangle: ours(fp32 Taylor 1000x dt=1e-3) vs scipy expm_multiply + qutip sesolve(rtol=1e-10); qutip 5.3.0 scipy 1.17.1 py3.11
+QUTIPVER,heis_16_5,n=65536,fid_scipy=0.999999999999,rel_scipy=8.810e-07,fid_qutip=0.999999999999,rel_qutip=8.819e-07,ref_vs_ref=4.375e-08
+QUTIPVER,tfim_16_5,n=65536,fid_scipy=0.999999999999,rel_scipy=8.451e-07,fid_qutip=0.999999999999,rel_qutip=8.452e-07,ref_vs_ref=3.013e-08
+QUTIPVER,fermi_16_5,n=65536,fid_scipy=0.999999999999,rel_scipy=8.401e-07,fid_qutip=0.999999999999,rel_qutip=8.404e-07,ref_vs_ref=5.439e-09
+QUTIPVER,qmaxcut_16_4,n=65536,fid_scipy=0.999999999999,rel_scipy=8.096e-07,fid_qutip=0.999999999999,rel_qutip=8.096e-07,ref_vs_ref=6.545e-09
+QUTIPVER,maxcut_16_5,n=65536,fid_scipy=1.000000000000,rel_scipy=6.228e-07,fid_qutip=1.000000000000,rel_qutip=6.230e-07,ref_vs_ref=9.412e-09
+QUTIPVER,heis_20_5,n=1048576,fid_scipy=0.999999999999,rel_scipy=9.030e-07,fid_qutip=0.999999999999,rel_qutip=9.058e-07,ref_vs_ref=2.638e-08

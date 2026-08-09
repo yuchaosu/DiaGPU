@@ -1,0 +1,23 @@
+==PROF== Connected to process 1846439 (/home/ysu34/DiaGPU/sim/paper_bench/bin_sm80/prep_driver)
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,didx,21.802,3.037,0.089771,277
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,didx_sym,13.183,3.248,0.090453,182
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,stream,0.001,3.000,0.084309,36
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,gopt,17.034,2.177,0.078507,245
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,csr_zskip,217.302,4.185,0.092843,2386
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,cusparse_csr,20.001,5.580,0.328704,78
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_flat,2.138,0.523,0.232789,11
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,hm_atomic,15.614,4.036,0.459093,43
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_sym,1.357,1.328,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_sym,1.357,1.328,0.131072,20
+==PROF== Disconnected from process 1846439
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_read.sum","byte","32,093,824"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","dram__bytes_write.sum","byte","2,362,240"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed","%","62.56"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","gpu__time_duration.sum","ns","28,512"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_requests_pipe_lsu_mem_global_op_red.sum","","0"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","l1tex__t_sector_hit_rate.pct","%","41.45"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","33.49"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","30.05"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","77.82"
+"0","1846439","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","8.0","Command line profiler metrics","smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct","%","66.09"

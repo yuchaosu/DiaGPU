@@ -1,0 +1,21 @@
+==PROF== Connected to process 1222506 (/home/ysu34/DiaGPU/sim/paper_bench/prep_driver)
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,didx,14.490,1.160,0.040768,384
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,stream,0.001,0.961,0.029707,32
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,gopt,11.763,0.928,0.028992,438
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,csr_zskip,125.043,1.694,0.034293,3696
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmv,cusparse_csr,16.319,2.895,0.113440,169
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_flat,1.088,0.164,0.132139,9
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,hm_atomic,19.484,1.422,0.212491,98
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_sym,0.663,0.208,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,spmspm,ours_sym,0.663,0.208,0.075787,12
+==PROF== Disconnected from process 1222506
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","dram__bytes_read.sum","byte","31,992,576"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","dram__bytes_write.sum","byte","1,105,152"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed","%","52.10"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","gpu__time_duration.sum","ns","16,160"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","l1tex__t_sector_hit_rate.pct","%","36.54"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","36.82"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","29.64"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","56.83"
+"0","1222506","prep_driver","127.0.0.1","void spmv_gather_kernel<128, 4, 1>(const float *, const DSeg *, int, const float *, int, float *)","1","7","(256, 1, 1)","(977, 1, 1)","0","9.0","Command line profiler metrics","smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct","%","65.13"

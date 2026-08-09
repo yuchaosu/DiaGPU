@@ -1,0 +1,48 @@
+== heis_18_5: n=262144 D=35 -> C diags=519 maxC=1.225e+03
+   stored=127991794  touched=12451840 (0.097 of stored)  nz=12417264  perfect_cancel=34576
+   |C| < 0.0001*maxC : 34576  (0.0028 of touched)
+   |C| < 1e-06*maxC : 34576  (0.0028 of touched)
+   |C| < 1e-08*maxC : 34576  (0.0028 of touched)
+   |C| < 1e-10*maxC : 34576  (0.0028 of touched)
+   |C| < 1e-12*maxC : 34576  (0.0028 of touched)
+   droppable diagonals (max < 1e-8*maxC): 2/519  stored-share 0.0020
+== tfim_18_5: n=262144 D=37 -> C diags=585 maxC=3.070e+02
+   stored=136183794  touched=45088768 (0.331 of stored)  nz=44985808  perfect_cancel=102960
+   |C| < 0.0001*maxC : 102960  (0.0023 of touched)
+   |C| < 1e-06*maxC : 102960  (0.0023 of touched)
+   |C| < 1e-08*maxC : 102960  (0.0023 of touched)
+   |C| < 1e-10*maxC : 102960  (0.0023 of touched)
+   |C| < 1e-12*maxC : 102960  (0.0023 of touched)
+   droppable diagonals (max < 1e-8*maxC): 2/585  stored-share 0.0000
+== qmaxcut_18_4: n=262144 D=35 -> C diags=613 maxC=2.231e+01
+   stored=77332402  touched=20316160 (0.263 of stored)  nz=20316160  perfect_cancel=0
+   |C| < 0.0001*maxC : 0  (0.0000 of touched)
+   |C| < 1e-06*maxC : 0  (0.0000 of touched)
+   |C| < 1e-08*maxC : 0  (0.0000 of touched)
+   |C| < 1e-10*maxC : 0  (0.0000 of touched)
+   |C| < 1e-12*maxC : 0  (0.0000 of touched)
+   droppable diagonals (max < 1e-8*maxC): 306/613  stored-share 0.0610
+== Lin: n=256000 D=7 -> C diags=25 maxC=3.306e+05
+   stored=6309594  touched=6221600 (0.986 of stored)  nz=6221600  perfect_cancel=0
+   |C| < 0.0001*maxC : 0  (0.0000 of touched)
+   |C| < 1e-06*maxC : 0  (0.0000 of touched)
+   |C| < 1e-08*maxC : 0  (0.0000 of touched)
+   |C| < 1e-10*maxC : 0  (0.0000 of touched)
+   |C| < 1e-12*maxC : 0  (0.0000 of touched)
+   droppable diagonals (max < 1e-8*maxC): 0/25  stored-share 0.0000
+== BH_20_7: n=1048576 D=127 -> C diags=5565 maxC=4.000e+04
+   stored=5107129522  touched=366547147 (0.072 of stored)  nz=343115669  perfect_cancel=23431478
+   |C| < 0.0001*maxC : 310268895  (0.8465 of touched)
+   |C| < 1e-06*maxC : 299455455  (0.8170 of touched)
+   |C| < 1e-08*maxC : 299455455  (0.8170 of touched)
+   |C| < 1e-10*maxC : 299455455  (0.8170 of touched)
+   |C| < 1e-12*maxC : 299455455  (0.8170 of touched)
+   droppable diagonals (max < 1e-8*maxC): 1496/5565  stored-share 0.2681
+== O2_16_5: n=65536 D=1243 -> C diags=107697 maxC=3.021e+03
+   stored=3786367946  touched=80822876 (0.021 of stored)  nz=80035284  perfect_cancel=787592
+   |C| < 0.0001*maxC : 74777275  (0.9252 of touched)
+   |C| < 1e-06*maxC : 58668782  (0.7259 of touched)
+   |C| < 1e-08*maxC : 47297196  (0.5852 of touched)
+   |C| < 1e-10*maxC : 46681820  (0.5776 of touched)
+   |C| < 1e-12*maxC : 46673500  (0.5775 of touched)
+   droppable diagonals (max < 1e-8*maxC): 76134/107697  stored-share 0.6486

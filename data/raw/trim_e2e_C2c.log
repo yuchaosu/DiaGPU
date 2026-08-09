@@ -1,0 +1,4 @@
+== C2c_18_4: n=262144 D=9971 K=4
+   TRIMEVOL,C2c_18_4,tau=1e-06,D=7407/9971,infid=1.465e-14,state_relerr=1.101e-07
+   TRIMEVOL,C2c_18_4,tau=1e-08,D=7407/9971,infid=1.554e-15,state_relerr=4.856e-10
+== C2c_18_4 done

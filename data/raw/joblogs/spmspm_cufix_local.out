@@ -1,0 +1,384 @@
+host=c29 2026-08-01T00:47:11-04:00
+== B2_10_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,ours_flat,0.021838,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,ours_sym,0.046182,1.907e-06
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,hm_atomic,0.043732,1.907e-06
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,diaq_fp64,0.174185,1.220e-06
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,diaq_fp32,0.137461,1.907e-06
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,747,436668,cusparse_spgemm,2.072528,-1.000e+00
+== B2_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,ours_flat,0.262666,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,ours_sym,0.211626,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,hm_atomic,0.333119,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,diaq_fp64,2.918443,1.722e-06
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,diaq_fp32,1.729444,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,4804,11380419,cusparse_spgemm,2.112096,-1.000e+00
+== B2_14_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,389,18515,190009390,ours_flat,3.894773,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),B2_14_4.txt
+== B2_8_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,ours_flat,0.011590,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,ours_sym,0.010750,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,hm_atomic,0.027763,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,diaq_fp64,0.041727,4.577e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,diaq_fp32,0.036232,9.537e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,319,44616,cusparse_spgemm,2.141472,-1.000e+00
+== BeH_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,299,5031,11437262,ours_flat,0.414389,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),BeH_12_4.txt
+== BeH_12_6
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,5031,11437262,ours_flat,0.414271,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),BeH_12_6.txt
+== BeH_8_3
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,ours_flat,0.010894,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,ours_sym,0.010574,5.960e-08
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,hm_atomic,0.025146,1.192e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,diaq_fp64,0.038947,9.919e-08
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,diaq_fp32,0.033781,5.960e-08
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,295,39880,cusparse_spgemm,2.136743,-1.000e+00
+== BH_20_7
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,5555,5108440242,ours_flat,45.027672,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BH_20_7.txt,1048576,127,5555,5108440242,ours_sym,19.785704,7.629e-06
+CUDA spmspm_driver.cu:149 out of memory
+SKIP(rc=1),BH_20_7.txt
+== BH_24_8
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),BH_24_8.txt
+== fermi_10_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,ours_flat,0.006697,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,ours_sym,0.016213,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,hm_atomic,0.014976,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,diaq_fp64,0.049553,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,diaq_fp32,0.040054,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_10_4.txt,1024,17,113,102554,cusparse_spgemm,2.170205,-1.000e+00
+== fermi_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,ours_flat,0.010676,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,ours_sym,0.019528,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,hm_atomic,0.017389,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,diaq_fp64,0.220942,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,diaq_fp32,0.167620,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_12_4.txt,4096,21,177,656322,cusparse_spgemm,2.247354,-1.000e+00
+== fermi_14_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,ours_flat,0.037153,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,ours_sym,0.027544,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,hm_atomic,0.039996,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,diaq_fp64,1.271996,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,diaq_fp32,0.841910,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_14_5.txt,16384,25,257,3870866,cusparse_spgemm,2.042240,-1.000e+00
+== fermi_16_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,ours_flat,0.129971,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,ours_sym,0.057397,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,hm_atomic,0.174629,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,diaq_fp64,7.310887,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,diaq_fp32,4.726108,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_16_5.txt,65536,29,353,21513010,cusparse_spgemm,2.501200,-1.000e+00
+== fermi_8_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,ours_flat,0.005339,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,ours_sym,0.005418,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,hm_atomic,0.011430,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,diaq_fp64,0.015892,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,diaq_fp32,0.014560,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/fermi_8_4.txt,256,13,65,14310,cusparse_spgemm,2.203853,-1.000e+00
+== heis_10_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,ours_flat,0.007739,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,ours_sym,0.017763,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,hm_atomic,0.016413,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,diaq_fp64,0.055686,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,diaq_fp32,0.044260,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_10_5.txt,1024,19,135,123122,cusparse_spgemm,2.272416,-1.000e+00
+== heis_12_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,ours_flat,0.011836,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,ours_sym,0.021061,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,hm_atomic,0.018887,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,diaq_fp64,0.240529,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,diaq_fp32,0.186075,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_12_5.txt,4096,23,207,771058,cusparse_spgemm,2.170762,-1.000e+00
+== heis_14_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,ours_flat,0.042576,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,ours_sym,0.029365,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,hm_atomic,0.043424,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,diaq_fp64,1.382666,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,diaq_fp32,0.935978,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_14_5.txt,16384,27,295,4460530,cusparse_spgemm,1.988496,-1.000e+00
+== heis_16_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,ours_flat,0.147648,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,ours_sym,0.064679,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,hm_atomic,0.203624,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,diaq_fp64,7.812051,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,diaq_fp32,5.077861,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_16_5.txt,65536,31,399,24395762,cusparse_spgemm,2.507046,-1.000e+00
+== heis_18_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,ours_flat,0.825183,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,ours_sym,0.327417,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,hm_atomic,1.406641,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,diaq_fp64,40.088913,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,diaq_fp32,29.085659,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,519,127991794,cusparse_spgemm,3.308688,-1.000e+00
+== heis_20_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,655,650379250,ours_flat,4.409174,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,655,650379250,ours_sym,1.896159,0.000e+00
+CUDA spmspm_driver.cu:149 out of memory
+SKIP(rc=1),heis_20_5.txt
+== heis_20_6
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,655,650379250,ours_flat,4.416664,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_6.txt,1048576,39,655,650379250,ours_sym,1.900676,0.000e+00
+CUDA spmspm_driver.cu:149 out of memory
+SKIP(rc=1),heis_20_6.txt
+== heis_22_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,807,3222274034,ours_flat,24.659700,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_5.txt,4194304,43,807,3222274034,ours_sym,10.819401,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_22_5.txt
+== heis_22_6
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,807,3222274034,ours_flat,24.668734,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_22_6.txt,4194304,43,807,3222274034,ours_sym,10.839268,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_22_6.txt
+== heis_24_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,975,15640559602,ours_flat,123.644051,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_5.txt,16777216,47,975,15640559602,ours_sym,54.789886,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_24_5.txt
+== heis_24_6
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,975,15640559602,ours_flat,123.827171,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_24_6.txt,16777216,47,975,15640559602,ours_sym,54.761749,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),heis_24_6.txt
+== heis_8_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,ours_flat,0.005619,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,ours_sym,0.005831,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,hm_atomic,0.011886,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,diaq_fp64,0.017551,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,diaq_fp32,0.015791,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_8_4.txt,256,15,79,17458,cusparse_spgemm,2.224707,-1.000e+00
+== maxcut_10_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,ours_flat,0.002815,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,ours_sym,0.004006,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,hm_atomic,0.004519,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,diaq_fp64,0.008051,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,diaq_fp32,0.007331,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_10_4.txt,1024,1,1,1024,cusparse_spgemm,2.219459,-1.000e+00
+== maxcut_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,ours_flat,0.002775,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,ours_sym,0.003903,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,hm_atomic,0.004801,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,diaq_fp64,0.012009,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,diaq_fp32,0.011586,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_12_4.txt,4096,1,1,4096,cusparse_spgemm,2.214941,-1.000e+00
+== maxcut_14_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,ours_flat,0.003059,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,ours_sym,0.004130,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,hm_atomic,0.006281,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,diaq_fp64,0.029541,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,diaq_fp32,0.027638,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_14_5.txt,16384,1,1,16384,cusparse_spgemm,2.137792,-1.000e+00
+== maxcut_16_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,ours_flat,0.004360,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,ours_sym,0.004119,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,hm_atomic,0.005155,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,diaq_fp64,0.098046,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,diaq_fp32,0.090699,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_16_5.txt,65536,1,1,65536,cusparse_spgemm,2.311607,-1.000e+00
+== maxcut_18_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,ours_flat,0.004743,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,ours_sym,0.004480,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,hm_atomic,0.006110,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,diaq_fp64,0.374748,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,diaq_fp32,0.343874,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_18_5.txt,262144,1,1,262144,cusparse_spgemm,2.323175,-1.000e+00
+== maxcut_20_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,ours_flat,0.007164,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,ours_sym,0.006119,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,hm_atomic,0.010164,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,diaq_fp64,1.996753,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,diaq_fp32,1.357780,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/maxcut_20_5.txt,1048576,1,1,1048576,cusparse_spgemm,2.476160,-1.000e+00
+== O2_16_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_5.txt,65536,1243,100975,3840684748,ours_flat,155.619095,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),O2_16_5.txt
+== O2_16_7
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/O2_16_7.txt,65536,1243,100975,3840684748,ours_flat,156.036987,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),O2_16_7.txt
+== O2_20_5
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),O2_20_5.txt
+== O2_20_8
+CUDA spmspm_driver.cu:94 out of memory
+SKIP(rc=1),O2_20_8.txt
+== qmaxcut_10_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,ours_flat,0.007762,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,ours_sym,0.014255,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,hm_atomic,0.015903,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,diaq_fp64,0.043298,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,diaq_fp32,0.036853,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_10_4.txt,1024,19,181,89042,cusparse_spgemm,2.217639,-1.000e+00
+== qmaxcut_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,ours_flat,0.010868,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,ours_sym,0.020478,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,hm_atomic,0.018535,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,diaq_fp64,0.172885,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,diaq_fp32,0.136468,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_12_4.txt,4096,23,265,520138,cusparse_spgemm,2.295696,-1.000e+00
+== qmaxcut_14_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,ours_flat,0.024543,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,ours_sym,0.024687,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,hm_atomic,0.027058,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,diaq_fp64,0.893377,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,diaq_fp32,0.631850,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_14_4.txt,16384,27,365,2867138,cusparse_spgemm,2.119261,-1.000e+00
+== qmaxcut_16_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,ours_flat,0.074188,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,ours_sym,0.034129,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,hm_atomic,0.093258,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,diaq_fp64,4.672859,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,diaq_fp32,3.422996,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_16_4.txt,65536,31,481,15138746,cusparse_spgemm,2.242954,-1.000e+00
+== qmaxcut_18_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,ours_flat,0.357768,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,ours_sym,0.149619,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,hm_atomic,0.434760,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,diaq_fp64,23.275845,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,diaq_fp32,17.141359,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,613,77332402,cusparse_spgemm,3.300557,-1.000e+00
+== qmaxcut_20_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,ours_flat,1.900351,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,ours_sym,0.826728,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,hm_atomic,2.510949,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,diaq_fp64,116.296837,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,diaq_fp32,83.811615,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,761,384827306,cusparse_spgemm,7.684518,-1.000e+00
+== tfim_10_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,ours_flat,0.007624,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,ours_sym,0.018731,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,hm_atomic,0.017383,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,diaq_fp64,0.058577,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,diaq_fp32,0.046472,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_10_4.txt,1024,21,167,138738,cusparse_spgemm,2.266563,-1.000e+00
+== tfim_12_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,ours_flat,0.012841,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,ours_sym,0.023317,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,hm_atomic,0.019787,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,diaq_fp64,0.251585,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,diaq_fp32,0.196231,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_12_4.txt,4096,25,247,849906,cusparse_spgemm,2.282355,-1.000e+00
+== tfim_14_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,ours_flat,0.045834,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,ours_sym,0.030652,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,hm_atomic,0.045184,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,diaq_fp64,1.439817,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,diaq_fp32,0.984959,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_14_4.txt,16384,29,343,4841458,cusparse_spgemm,2.462666,-1.000e+00
+== tfim_16_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,ours_flat,0.157949,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,ours_sym,0.069165,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,hm_atomic,0.219562,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,diaq_fp64,8.101392,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,diaq_fp32,5.353001,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_4.txt,65536,33,455,26181618,cusparse_spgemm,4.870781,-1.000e+00
+== tfim_16_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,ours_flat,0.157689,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,ours_sym,0.069103,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,hm_atomic,0.219534,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,diaq_fp64,8.100367,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,diaq_fp32,5.359567,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_16_5.txt,65536,33,455,26181618,cusparse_spgemm,4.884704,-1.000e+00
+== tfim_18_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,ours_flat,0.890198,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,ours_sym,0.349120,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,hm_atomic,1.483719,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,diaq_fp64,41.770172,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,diaq_fp32,30.294634,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,583,136183794,cusparse_spgemm,15.634233,-1.000e+00
+== tfim_18_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,ours_flat,0.887994,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,ours_sym,0.349084,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,hm_atomic,1.484108,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,diaq_fp64,41.705727,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,diaq_fp32,30.343168,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,583,136183794,cusparse_spgemm,15.609764,-1.000e+00
+== tfim_20_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,727,687341554,ours_flat,4.705201,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_20_5.txt,1048576,41,727,687341554,ours_sym,2.028167,0.000e+00
+CUDA spmspm_driver.cu:149 out of memory
+SKIP(rc=1),tfim_20_5.txt
+== tfim_22_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,887,3386900466,ours_flat,26.354729,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_22_5.txt,4194304,45,887,3386900466,ours_sym,11.613873,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),tfim_22_5.txt
+== tfim_24_5
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,1063,16366174194,ours_flat,131.310715,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_24_5.txt,16777216,49,1063,16366174194,ours_sym,58.411015,0.000e+00
+terminate called after throwing an instance of 'std::length_error'
+  what():  cannot create std::vector larger than max_size()
+timeout: the monitored command dumped core
+SKIP(rc=134),tfim_24_5.txt
+== tfim_8_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,ours_flat,0.005804,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,ours_sym,0.005974,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,hm_atomic,0.012818,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,diaq_fp64,0.018641,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,diaq_fp32,0.017175,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_8_4.txt,256,17,103,20338,cusparse_spgemm,2.227840,-1.000e+00
+== tsp_15_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,ours_flat,0.003186,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,ours_sym,0.004166,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,hm_atomic,0.005338,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,diaq_fp64,0.052700,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,diaq_fp32,0.049128,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_15_4.txt,32768,1,1,32768,cusparse_spgemm,2.345193,-1.000e+00
+== tsp_18_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,ours_flat,0.004809,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,ours_sym,0.004473,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,hm_atomic,0.006115,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,diaq_fp64,0.374644,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,diaq_fp32,0.343794,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_18_4.txt,262144,1,1,262144,cusparse_spgemm,2.328509,-1.000e+00
+== tsp_8_4
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,ours_flat,0.002674,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,ours_sym,0.002687,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,hm_atomic,0.003980,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,diaq_fp64,0.005364,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,diaq_fp32,0.005286,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tsp_8_4.txt,256,1,1,256,cusparse_spgemm,2.284970,-1.000e+00
+== flowmeter0
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/flowmeter0.txt,9669,801,3075,27355213,ours_flat,9.565042,0.000e+00
+CUDA spmspm_driver.cu:125 an illegal memory access was encountered
+SKIP(rc=1),flowmeter0.txt
+== fv1
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,ours_flat,0.005575,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,ours_sym,0.011062,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,hm_atomic,0.009448,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,diaq_fp64,0.247673,1.701e-07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,diaq_fp32,0.176725,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/fv1.txt,9604,9,25,237154,cusparse_spgemm,2.278582,-1.000e+00
+== rdb5000
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,ours_flat,0.004511,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,ours_sym,0.009015,2.950e+02
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,hm_atomic,0.008543,9.766e-04
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,diaq_fp64,0.094263,6.109e-04
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,diaq_fp32,0.072193,9.766e-04
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/rdb5000.txt,5000,7,21,103580,cusparse_spgemm,2.372477,-1.000e+00
+== tols4000
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,ours_flat,0.126390,0.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,ours_sym,0.216772,2.344e+07
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,hm_atomic,0.183462,1.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,diaq_fp64,1.241194,2.047e+03
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,diaq_fp32,0.918341,1.000e+00
+SPMSPMCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/tols4000.txt,4000,177,587,1297805,cusparse_spgemm,2.105527,-1.000e+00
+== DONE: 272 rows

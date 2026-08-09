@@ -1,0 +1,49 @@
+== heis_18_5: n=262144 D=35 nnz=2490368 max|H|=3.500e+01 spmspm_err=exact
+  tau=0.001: NO-OP (nothing below threshold)
+  tau=0.0001: NO-OP (nothing below threshold)
+  tau=1e-05: NO-OP (nothing below threshold)
+  tau=1e-06: NO-OP (nothing below threshold)
+  tau=1e-08: NO-OP (nothing below threshold)
+== heis_18_5 done
+== bh_16_5: n=65536 D=167 nnz=1276483 max|H|=3.200e+01 spmspm_err=exact
+  tau=0.001: keep_nnz=0.4499 keep_D=43/167 spmv_relerr=2.66e-17 spmspm_bound=9.42e-17 spmspm_maxrel=1.56e-17 fro_rel=3.08e-17
+  tau=0.0001: keep_nnz=0.4499 keep_D=43/167 spmv_relerr=2.66e-17 spmspm_bound=9.42e-17 spmspm_maxrel=1.56e-17 fro_rel=3.08e-17
+  tau=1e-05: keep_nnz=0.4499 keep_D=43/167 spmv_relerr=2.66e-17 spmspm_bound=9.42e-17 spmspm_maxrel=1.56e-17 fro_rel=3.08e-17
+  tau=1e-06: keep_nnz=0.4499 keep_D=43/167 spmv_relerr=2.66e-17 spmspm_bound=9.42e-17 spmspm_maxrel=1.56e-17 fro_rel=3.08e-17
+  tau=1e-08: keep_nnz=0.4499 keep_D=43/167 spmv_relerr=2.66e-17 spmspm_bound=9.42e-17 spmspm_maxrel=1.56e-17 fro_rel=3.08e-17
+== bh_16_5 done
+== vibbf3_18_3: n=262144 D=12 nnz=1038976 max|H|=1.233e+00 spmspm_err=exact
+  tau=0.001: keep_nnz=0.8831 keep_D=12/12 spmv_relerr=6.76e-18 spmspm_bound=1.24e-17 spmspm_maxrel=5.88e-18 fro_rel=5.24e-18
+  tau=0.0001: keep_nnz=0.8831 keep_D=12/12 spmv_relerr=6.76e-18 spmspm_bound=1.24e-17 spmspm_maxrel=5.88e-18 fro_rel=5.24e-18
+  tau=1e-05: keep_nnz=0.8831 keep_D=12/12 spmv_relerr=6.76e-18 spmspm_bound=1.24e-17 spmspm_maxrel=5.88e-18 fro_rel=5.24e-18
+  tau=1e-06: keep_nnz=0.8831 keep_D=12/12 spmv_relerr=6.76e-18 spmspm_bound=1.24e-17 spmspm_maxrel=5.88e-18 fro_rel=5.24e-18
+  tau=1e-08: keep_nnz=0.8831 keep_D=12/12 spmv_relerr=6.76e-18 spmspm_bound=1.24e-17 spmspm_maxrel=5.88e-18 fro_rel=5.24e-18
+== vibbf3_18_3 done
+== vibc2h_16_1: n=65536 D=14 nnz=229376 max|H|=1.218e-01 spmspm_err=exact
+  tau=0.001: NO-OP (nothing below threshold)
+  tau=0.0001: NO-OP (nothing below threshold)
+  tau=1e-05: NO-OP (nothing below threshold)
+  tau=1e-06: NO-OP (nothing below threshold)
+  tau=1e-08: NO-OP (nothing below threshold)
+== vibc2h_16_1 done
+== O2_16_5: n=65536 D=1243 nnz=4828093 max|H|=3.770e+01 spmspm_err=exact
+  tau=0.001: keep_nnz=0.3789 keep_D=405/1243 spmv_relerr=5.07e-03 spmspm_bound=2.62e-02 spmspm_maxrel=6.19e-04 fro_rel=5.18e-03
+  tau=0.0001: keep_nnz=0.7668 keep_D=813/1243 spmv_relerr=2.09e-04 spmspm_bound=5.49e-04 spmspm_maxrel=6.02e-05 fro_rel=1.27e-04
+  tau=1e-05: keep_nnz=0.8144 keep_D=867/1243 spmv_relerr=4.16e-06 spmspm_bound=5.46e-06 spmspm_maxrel=2.13e-06 fro_rel=2.23e-07
+  tau=1e-06: keep_nnz=0.8144 keep_D=867/1243 spmv_relerr=3.91e-09 spmspm_bound=5.75e-09 spmspm_maxrel=1.12e-09 fro_rel=9.49e-11
+  tau=1e-08: keep_nnz=0.8144 keep_D=867/1243 spmv_relerr=3.91e-09 spmspm_bound=5.75e-09 spmspm_maxrel=1.12e-09 fro_rel=9.49e-11
+== O2_16_5 done
+== BH_20_7: n=1048576 D=127 nnz=25824385 max|H|=2.000e+02 spmspm_err=exact
+  tau=0.001: keep_nnz=0.4476 keep_D=109/127 spmv_relerr=5.37e-18 spmspm_bound=2.28e-17 spmspm_maxrel=2.50e-18 fro_rel=8.27e-18
+  tau=0.0001: keep_nnz=0.4476 keep_D=109/127 spmv_relerr=5.37e-18 spmspm_bound=2.28e-17 spmspm_maxrel=2.50e-18 fro_rel=8.27e-18
+  tau=1e-05: keep_nnz=0.4476 keep_D=109/127 spmv_relerr=5.37e-18 spmspm_bound=2.28e-17 spmspm_maxrel=2.50e-18 fro_rel=8.27e-18
+  tau=1e-06: keep_nnz=0.4476 keep_D=109/127 spmv_relerr=5.37e-18 spmspm_bound=2.28e-17 spmspm_maxrel=2.50e-18 fro_rel=8.27e-18
+  tau=1e-08: keep_nnz=0.4476 keep_D=109/127 spmv_relerr=5.37e-18 spmspm_bound=2.28e-17 spmspm_maxrel=2.50e-18 fro_rel=8.27e-18
+== BH_20_7 done
+== H8_16_6: n=65536 D=8979 nnz=10756543 max|H|=2.000e+01 spmspm_err=BOUND-only
+  tau=0.001: keep_nnz=0.5395 keep_D=4869/8979 spmv_relerr=3.67e-03 spmspm_bound=2.50e-02
+  tau=0.0001: keep_nnz=0.8361 keep_D=6751/8979 spmv_relerr=1.40e-04 spmspm_bound=3.31e-04
+  tau=1e-05: keep_nnz=0.8696 keep_D=6955/8979 spmv_relerr=3.52e-06 spmspm_bound=7.11e-06
+  tau=1e-06: keep_nnz=0.8697 keep_D=6955/8979 spmv_relerr=3.15e-07 spmspm_bound=4.17e-07
+  tau=1e-08: keep_nnz=0.8697 keep_D=6955/8979 spmv_relerr=6.14e-10 spmspm_bound=3.77e-09
+== H8_16_6 done

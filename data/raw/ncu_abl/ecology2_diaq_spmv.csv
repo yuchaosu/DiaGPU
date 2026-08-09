@@ -1,0 +1,8 @@
+==PROF== Connected to process 1230941 (/home/ysu34/DiaGPU/sim/paper_bench/spmv_driver)
+SPMVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,6995993,4995991,ours_didx_nv1,0.031499,4.499e-08
+SPMVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,6995993,4995991,ours_didx_nv2,0.032629,4.500e-08
+SPMVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,6995993,4995991,ours_gather_nv1,0.031904,4.499e-08
+SPMVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,6995993,4995991,ours_gather_nv2,0.032715,4.500e-08
+SPMVCSV,/mnt/beegfs/ysu34/hamlib/dia_suitesparse/ecology2.txt,999999,7,6995993,4995991,ours_gopt_nv1,0.031765,4.500e-08
+==PROF== Disconnected from process 1230941
+==ERROR== The application returned an error code (1).

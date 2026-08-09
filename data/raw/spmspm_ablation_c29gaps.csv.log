@@ -1,0 +1,5 @@
+# L0 hm skipped: C nnz 5108440242 exceeds HM int32 layout
+An 1243 > A_DMAX
+An 1243 > A_DMAX
+CUDA /home/ysu34/DiaGPU/sim/spmspm_ablation.cu:62 out of memory
+CUDA /home/ysu34/DiaGPU/sim/spmspm_ablation.cu:62 out of memory

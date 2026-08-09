@@ -1,0 +1,21 @@
+==PROF== Connected to process 1219532 (/home/ysu34/DiaGPU/sim/paper_bench/prep_driver)
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,didx,65.349,2.108,0.047723,1414
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,stream,0.002,4.812,0.076725,63
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,gopt,80.583,3.440,0.056288,1493
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,csr_zskip,424.514,3.202,0.049312,8674
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmv,cusparse_csr,123.788,4.690,0.113739,1130
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_flat,4.181,0.593,4.327382,1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,hm_atomic,436.400,6.114,7.311467,61
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,2.020,1.090,-1.000000,-1
+PREPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_20_5.txt,1048576,39,spmspm,ours_sym,2.020,1.090,2.153653,1
+==PROF== Disconnected from process 1219532
+"ID","Process ID","Process Name","Host Name","Kernel Name","Context","Stream","Block Size","Grid Size","Device","CC","Section Name","Metric Name","Metric Unit","Metric Value"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","dram__bytes_read.sum","byte","96,611,584"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","dram__bytes_write.sum","byte","4,502,784"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed","%","61.01"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","gpu__time_duration.sum","ns","42,144"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","l1tex__t_sector_hit_rate.pct","%","81.03"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","lts__t_sector_hit_rate.pct","%","47.87"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","sm__throughput.avg.pct_of_peak_sustained_elapsed","%","18.30"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","sm__warps_active.avg.pct_of_peak_sustained_active","%","85.55"
+"0","1219532","prep_driver","127.0.0.1","spmv_csr_scalar(CsrView, const float *, float *)","1","7","(256, 1, 1)","(4096, 1, 1)","0","9.0","Command line profiler metrics","smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct","%","78.69"

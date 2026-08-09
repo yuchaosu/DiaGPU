@@ -1,0 +1,37 @@
+== O2c_16_5: n=65536 D=1243 nnz=4830852 max|H|=3.770e+01 spmspm_err=exact
+  tau=0.001: keep_nnz=0.3651 keep_D=389/1243 spmv_relerr=1.07e-02 spmspm_bound=8.18e-02 spmspm_maxrel=1.32e-03 fro_rel=1.81e-02
+  tau=0.0001: keep_nnz=0.7528 keep_D=799/1243 spmv_relerr=4.44e-04 spmspm_bound=1.74e-03 spmspm_maxrel=1.28e-04 fro_rel=4.78e-04
+  tau=1e-05: keep_nnz=0.8004 keep_D=853/1243 spmv_relerr=1.25e-05 spmspm_bound=3.10e-05 spmspm_maxrel=4.71e-06 fro_rel=2.00e-05
+  tau=1e-06: keep_nnz=0.8140 keep_D=867/1243 spmv_relerr=8.22e-09 spmspm_bound=1.80e-08 spmspm_maxrel=2.11e-09 fro_rel=7.09e-10
+  tau=1e-08: keep_nnz=0.8140 keep_D=867/1243 spmv_relerr=8.22e-09 spmspm_bound=1.80e-08 spmspm_maxrel=2.11e-09 fro_rel=7.09e-10
+== O2c_16_5 done
+== C2c_18_4: n=262144 D=9971 nnz=30193577 max|H|=1.425e+01 spmspm_err=BOUND-only
+  tau=0.001: keep_nnz=0.3378 keep_D=3361/9971 spmv_relerr=1.34e-02 spmspm_bound=1.20e-01
+  tau=0.0001: keep_nnz=0.7116 keep_D=6531/9971 spmv_relerr=8.75e-04 spmspm_bound=4.86e-03
+  tau=1e-05: keep_nnz=0.8117 keep_D=7369/9971 spmv_relerr=3.26e-05 spmspm_bound=7.66e-05
+  tau=1e-06: keep_nnz=0.8205 keep_D=7407/9971 spmv_relerr=9.76e-07 spmspm_bound=1.69e-06
+  tau=1e-08: keep_nnz=0.8205 keep_D=7407/9971 spmv_relerr=6.60e-09 spmspm_bound=2.35e-08
+== C2c_18_4 done
+== H8c_16_4: n=65536 D=8887 nnz=10694387 max|H|=1.803e+01 spmspm_err=BOUND-only
+  tau=0.001: keep_nnz=0.5565 keep_D=4947/8887 spmv_relerr=1.29e-02 spmspm_bound=1.07e-01
+  tau=0.0001: keep_nnz=0.8288 keep_D=6693/8887 spmv_relerr=6.35e-04 spmspm_bound=1.70e-03
+  tau=1e-05: keep_nnz=0.8670 keep_D=6921/8887 spmv_relerr=1.28e-05 spmspm_bound=3.68e-05
+  tau=1e-06: keep_nnz=0.8671 keep_D=6921/8887 spmv_relerr=1.21e-06 spmspm_bound=1.99e-06
+  tau=1e-08: keep_nnz=0.8671 keep_D=6921/8887 spmv_relerr=4.00e-09 spmspm_bound=2.71e-08
+== H8c_16_4 done
+== O2c_16_5: n=65536 D=1243 -> C diags=107291 maxC=1.421e+03
+   stored=3772238494  touched=74768370 (0.020 of stored)  nz=74066499  perfect_cancel=701871
+   |C| < 0.0001*maxC : 72374820  (0.9680 of touched)
+   |C| < 1e-06*maxC : 53620666  (0.7172 of touched)
+   |C| < 1e-08*maxC : 46482202  (0.6217 of touched)
+   |C| < 1e-10*maxC : 46326866  (0.6196 of touched)
+   |C| < 1e-12*maxC : 46326770  (0.6196 of touched)
+   droppable diagonals (max < 1e-8*maxC): 79412/107291  stored-share 0.6961
+== _O2c_16_trim1e6: n=65536 D=867 -> C diags=38053 maxC=1.421e+03
+   stored=1285199242  touched=30152672 (0.023 of stored)  nz=30136351  perfect_cancel=16321
+   |C| < 0.0001*maxC : 27759122  (0.9206 of touched)
+   |C| < 1e-06*maxC : 9004968  (0.2986 of touched)
+   |C| < 1e-08*maxC : 1866504  (0.0619 of touched)
+   |C| < 1e-10*maxC : 1711168  (0.0568 of touched)
+   |C| < 1e-12*maxC : 1711072  (0.0567 of touched)
+   droppable diagonals (max < 1e-8*maxC): 10174/38053  stored-share 0.1079

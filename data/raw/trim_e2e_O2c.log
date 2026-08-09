@@ -1,0 +1,4 @@
+== O2c_16_5: n=65536 D=1243 K=5
+   TRIMEVOL,O2c_16_5,tau=1e-06,D=867/1243,infid=-2.220e-15,state_relerr=2.607e-09
+   TRIMEVOL,O2c_16_5,tau=1e-08,D=867/1243,infid=-2.220e-15,state_relerr=2.607e-09
+== O2c_16_5 done

@@ -1,0 +1,81 @@
+host=c29 2026-07-31T03:35:43-04:00
+NVIDIA H100 NVL
+interactive run still active (2026-07-31T03:35:43-04:00); waiting 10 min
+interactive run still active (2026-07-31T03:45:43-04:00); waiting 10 min
+== build (patched drivers, sm_90a) ==
+== stage A: prep completeness ==
+== stage B: e2e completeness ==
+== e2e O2_20_8 [L4-sym] ==
+# cusparse arm skipped: H nnz 2885206540 > INT32_MAX
+# opbuild wall: Unnz=1099511627776 (int32 index limit)
+SKIP(rc=124),O2_20_8.txt
+== e2e heis_18_5 [L4-sym] ==
+# opbuild wall: Unnz=15484329072 (int32 index limit)
+# opbuild(sym) wall: Unnz=7742295608 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,1000,5,didx,22.117,18.104,65.578,602.038,9.181,3.075e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,1000,5,1.150,180.375,2.751,2.886e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,2,519,127991794,0.721,0.846,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,35,3,4279,1016725618,13.374,12.112,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,5,72483,15484329072,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/heis_18_5.txt,262144,5,36242,7742295608,-1,-1,-1
+== e2e qmaxcut_18_4 [L4-sym] ==
+# opbuild wall: Unnz=3485530152 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,1000,4,didx,13.903,12.050,52.897,322.461,6.096,1.047e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,1000,4,0.700,98.936,1.870,6.257e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,2,613,77332402,0.511,0.360,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,35,3,4455,608304862,14.029,4.472,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,4,27051,3485530152,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_18_4.txt,262144,4,13526,1742896148,79.194,-1,-1
+== e2e qmaxcut_20_4 [L4-sym] ==
+# opbuild wall: Unnz=22750164124 (int32 index limit)
+# opbuild(sym) wall: Unnz=11375606350 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,1000,4,didx,63.370,48.901,195.938,1001.051,5.109,1.102e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,1000,4,2.616,412.689,2.106,6.784e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,2,761,384827306,1.947,2.115,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,39,3,6271,3415735960,35.816,30.121,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,4,44143,22750164124,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/qmaxcut_20_4.txt,1048576,4,22072,11375606350,-1,-1,-1
+== e2e tfim_18_4 [L4-sym] ==
+# opbuild wall: Unnz=5652348032 (int32 index limit)
+# opbuild(sym) wall: Unnz=2826305088 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,1000,4,didx,24.623,18.942,67.932,489.998,7.213,2.550e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,1000,4,1.187,149.925,2.207,2.346e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,2,583,136183794,0.818,0.931,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,37,3,5155,1121714288,17.562,13.587,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,4,28143,5652348032,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_4.txt,262144,4,14072,2826305088,-1,-1,-1
+== e2e tfim_18_5 [L4-sym] ==
+# opbuild wall: Unnz=18243132416 (int32 index limit)
+# opbuild(sym) wall: Unnz=9121697280 (int32 index limit)
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,1000,5,didx,25.931,19.189,83.968,610.809,7.274,2.559e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,1000,5,1.193,186.101,2.216,2.343e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,2,583,136183794,0.816,0.940,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,37,3,5155,1121714288,17.584,14.059,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,5,99695,18243132416,-1,-1,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/tfim_18_5.txt,262144,5,49848,9121697280,-1,-1,-1
+== stage C: ncu shared-mem completeness ==
+node=c29 gpu=NVIDIA H100 NVL arch=sm_90a out=/mnt/beegfs/ysu34/paper_bench
+NVIDIA (R) Nsight Compute Command Line Profiler
+== build (sm_90a) ==
+make: 'spmv_driver' is up to date.
+/home/ysu34/DiaGPU/sim/spmspm_ablation.cu(71): warning #177-D: variable "mblk" was declared but never referenced
+      { const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn); }
+                              ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/ysu34/DiaGPU/sim/spmspm_ablation.cu(71): warning #177-D: variable "mblk" was declared but never referenced
+      { const int ILP=4; dim3 mblk(256), mgrid((n+256*ILP-1)/(256*ILP),Cn); }
+                              ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+== ncu shared-mem profile -> /mnt/beegfs/ysu34/paper_bench/ncu_shared_h100.csv ==
+  profiled heis_16_5
+  profiled tfim_16_5
+  profiled fermi_16_5
+  profiled qmaxcut_16_4
+  profiled O2_16_5
+== done: /mnt/beegfs/ysu34/paper_bench/ncu_shared_h100.csv (364 rows) ==
+== FINISH_C29 DONE 2026-07-31T04:56:16-04:00 ==
+  prep rows: 645  e2e opbuild: 112  ncu rows: 364

@@ -1,0 +1,53 @@
+host=c29
+NVIDIA H100 NVL, 9.0
+== e2e B2_10_4 [L4-sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,1000,4,didx,1.490,0.474,24.696,102.547,4.152,5.215e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,1000,4,0.046,103.856,4.205,4.359e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,2,747,436668,0.554,0.022,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,71,3,1887,991896,8.993,0.060,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,4,2047,1048576,24.432,30.056,1.230
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_10_4.txt,1024,4,1024,524800,3.098,-1,-1
+== e2e B2_12_4 [L4-sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,1000,4,didx,2.083,2.291,34.691,126.018,3.633,5.401e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,1000,4,0.183,279.588,8.059,4.376e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,2,4804,11380419,11.607,0.263,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,210,3,8189,16776912,295.922,3.465,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,4,8191,16777216,538.919,706.717,1.311
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_12_4.txt,4096,4,4096,8390656,46.905,-1,-1
+== e2e B2_14_4 [L4-sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,389,1000,4,didx,10.724,11.450,45.020,286.247,6.358,6.013e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,389,1000,4,0.796,580.611,12.897,4.668e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,389,2,18515,190009390,75.754,3.896,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,389,3,32767,268435456,4325.604,164.074,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_14_4.txt,16384,4,32767,268435456,8070.188,11111.466,1.377
+== e2e B2_8_4 [L4-sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,1000,4,didx,0.134,0.406,22.636,89.409,3.950,6.372e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,1000,4,0.045,67.323,2.974,6.196e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,2,319,44616,0.196,0.012,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,47,3,511,65536,1.190,0.015,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,4,511,65536,2.519,3.066,1.217
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/B2_8_4.txt,256,4,256,32896,0.601,-1,-1
+== e2e BeH_12_4 [L4-sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,299,1000,4,didx,3.028,2.167,45.037,130.554,2.899,5.128e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,299,1000,4,0.209,373.834,8.301,4.836e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,299,2,5031,11437262,13.184,0.414,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,299,3,8191,16777216,205.248,4.648,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_4.txt,4096,4,8191,16777216,433.341,552.170,1.274
+== e2e BeH_12_6 [L4-sym] ==
+CUDA common.cuh:33 an illegal memory access was encountered
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,1000,6,didx,2.916,2.501,64.664,188.348,2.913,5.063e-07
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,1000,6,0.201,557.885,8.627,4.619e-07
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,2,5031,11437262,13.212,0.414,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,299,3,8191,16777216,206.110,4.649,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_12_6.txt,4096,6,8191,16777216,826.877,1043.862,1.262
+== e2e BeH_8_3 [L4-sym] ==
+E2EEVCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,1000,3,didx,0.138,0.395,18.512,72.407,3.911,2.392e-08
+E2EEVDIAQCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,1000,3,0.045,47.725,2.578,2.027e-08
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,2,295,39880,0.158,0.011,-1
+E2EOPCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,45,3,509,65508,1.145,0.014,-1
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,3,509,65508,1.503,1.947,1.296
+E2EOPBUILDCSV,/mnt/beegfs/ysu34/hamlib/dia_e2e/BeH_8_3.txt,256,3,255,32882,0.349,-1,-1
+== e2e BH_20_7 [L4-sym] ==
+[2026-07-30T09:13:13.263] error: *** JOB 268662 ON c29 CANCELLED AT 2026-07-30T09:13:13 DUE to SIGNAL Terminated ***
