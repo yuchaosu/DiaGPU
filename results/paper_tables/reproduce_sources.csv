@@ -1,0 +1,36 @@
+matrix,source,key,K,protocol,generator,provenance
+BH_20_7,BH/BH.hdf5,bh_graph-1D-grid-nonpbc-qubitnodes_Lx-10_U-10_enc-gray_d-4,7,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+C2c_18_4,hamlib_portal_hdf5/chemistry/electronic/standard/C2.hdf5,ham_BK-18,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+H8c_16_4,hamlib_portal_hdf5/chemistry/electronic/hydrogen_data/H8_linear/ES_H8_linear_R0.6_sto-6g_ham.hdf5,ham_BK,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+Lin,https://sparse.tamu.edu/Lin/Lin,MatrixMarket via sim/mtx_to_dia,,dt=0.0012 steps=1000,mtx_to_dia,recorded
+O2c_16_5,O2/O2.hdf5,ham_JW16,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+O2c_20_5,O2/O2.hdf5,ham_JW20,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+atmosmodd,https://sparse.tamu.edu/Bourchtein/atmosmodd,MatrixMarket via sim/mtx_to_dia,,dt=0.0012 steps=1000,mtx_to_dia,recorded
+bhD1_18_7,hamlib_portal_hdf5/condensedmatter/bosehubbard/BH_D-1_d-4.hdf5,bh_graph-1D-grid-nonpbc-qubitnodes_Lx-9_U-10_enc-gray_d-4,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,manifest
+bhc_16_7,BH/BH.hdf5,bh_graph-1D-grid-nonpbc-qubitnodes_Lx-8_U-10_enc-gray_d-4,7,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+bhc_18_7,BH/BH.hdf5,bh_graph-1D-grid-nonpbc-qubitnodes_Lx-9_U-10_enc-gray_d-4,7,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+ecology2,https://sparse.tamu.edu/McRae/ecology2,MatrixMarket via sim/mtx_to_dia,,dt=0.0012 steps=1000,mtx_to_dia,recorded
+fermiFH_18_4,hamlib_portal_hdf5/condensedmatter/fermihubbard/FH_D-1.hdf5,fh-graph-1D-grid-nonpbc-qubitnodes_Lx-9_U-0_enc-bk,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,manifest
+fermi_16_5,fermi/fermi.hdf5,fh-graph-1D-grid-nonpbc-qubitnodes_Lx-8_U-4_enc-jw,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+fermi_18_5,fermi/fermi.hdf5,fh-graph-1D-grid-nonpbc-qubitnodes_Lx-9_U-2_enc-jw,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+fermi_20_5,fermi/fermi.hdf5,fh-graph-1D-grid-nonpbc-qubitnodes_Lx-10_U-2_enc-jw,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
+heis_16_5,heis/heis.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-16_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+heis_18_5,heis/heis.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-18_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+heis_20_5,heis/heis.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-20_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded(sibling heis_20_6)
+heis_20_6,heis/heis.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-20_h-1,6,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+maxcut_16_5,maxcut/maxcut.hdf5,complbipart-n-16_a-8_b-8,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+maxcut_18_5,maxcut/maxcut.hdf5,complbipart-n-18_a-9_b-9,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+maxcut_20_5,maxcut/maxcut.hdf5,complbipart-n-20_a-10_b-10,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+qmaxcutC_18_4,hamlib_portal_hdf5/binaryoptimization/qmaxcut/random/graph-circulant.hdf5,circ-n-18_offsets-1-2,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,manifest
+qmaxcutK_18_4,hamlib_portal_hdf5/binaryoptimization/qmaxcut/ciqube/Karloff-hams.hdf5,1-Karloff_6_3_1.txt-6,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,manifest
+qmaxcutR_18_3,hamlib_portal_hdf5/binaryoptimization/qmaxcut/biqmac/rudy-instances.hdf5,3-pw05_100.7-4,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,manifest
+qmaxcut_16_4,qmaxcut/qmaxcut.hdf5,graph-n-16,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+qmaxcut_18_4,qmaxcut/qmaxcut.hdf5,graph-n-18,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+qmaxcut_20_4,qmaxcut/qmaxcut.hdf5,graph-n-20,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+tfim_16_4,tfim/tfim.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-16_h-1,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded(sibling tfim_16_5)
+tfim_16_5,tfim/tfim.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-16_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+tfim_18_4,tfim/tfim.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-18_h-1,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded(sibling tfim_18_5)
+tfim_18_5,tfim/tfim.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-18_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+tfim_20_5,tfim/tfim.hdf5,graph-1D-grid-nonpbc-qubitnodes_Lx-20_h-1,5,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+tsp_18_4,tsp/tsp.hdf5,tsppenalty_Ncity-6_enc-stdbinary,4,dt=0.0012 steps=1000,fetchham_sparse_dia.py,csv-recorded
+vibbf3_18_3,hamlib_portal_hdf5/chemistry/vibrational/all-vib-bf3.hdf5,mu_y_prime_enc_gray_dvalues_8-8-8-8-8-8,,dt=0.0012 steps=1000,fetchham_sparse_dia.py,fp64-verified
